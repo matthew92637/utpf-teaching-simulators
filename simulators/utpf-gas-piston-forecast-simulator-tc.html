@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UTPF 氣體活塞模擬器 — 短期預測版（熵＋集合預測）</title>
+<style>
+  :root { --ink:#14324a; --teal:#1b8a7a; --gold:#d4a017; --line:#b9c9d4; --bg:#f4f8fa; --card:#ffffff;
+          --dem:#2277cc; --sup:#dd6633; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Noto Sans","Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px 6px; }
+  h1 { margin:0; font-size:21px; color:#0e3a56; }
+  .sub { color:#5a7186; font-size:13px; margin-top:2px; }
+  .wrap { display:flex; gap:14px; padding:10px 20px 20px; flex-wrap:wrap; }
+  .stage { flex:1 1 640px; min-width:340px; }
+  .panel { flex:0 1 330px; min-width:290px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .card h2 { margin:0 0 8px; font-size:14.5px; color:#0e3a56; }
+  canvas#stage { width:100%; background:#0d2233; border-radius:10px; display:block; }
+  canvas#chart { width:100%; background:#ffffff; border:1px solid var(--line); border-radius:10px; display:block; margin-top:10px; }
+  .ctl { margin:9px 0; }
+  .ctl label { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:2px; }
+  .ctl label b { color:#0e3a56; }
+  .ctl input[type=range] { width:100%; accent-color:var(--teal); }
+  .dem-h { color:var(--dem); } .sup-h { color:var(--sup); }
+  .btnrow { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
+  button { border:1px solid var(--teal); background:#e8f4f1; color:#0e3a56; border-radius:7px;
+           padding:6px 10px; font-size:12.5px; cursor:pointer; }
+  button:hover { background:#d3ebe5; }
+  button.warn { border-color:var(--gold); background:#fdf3d7; }
+  .read { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; font-size:12.8px; }
+  .read .k { color:#5a7186; } .read .v { font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+  .big { font-size:15px; }
+  .gauge { position:relative; height:26px; background:linear-gradient(90deg,#7db3e8 0%,#cfe8d8 38%,#eafaf1 50%,#fdeeda 62%,#f2a65e 100%);
+           border:1px solid var(--line); border-radius:6px; margin:6px 0 2px; }
+  .gauge .ideal { position:absolute; left:50%; top:-3px; bottom:-3px; width:2px; background:#0e3a56; }
+  .gauge .dot { position:absolute; top:50%; width:14px; height:14px; border-radius:50%; background:#0e3a56;
+                border:2px solid #fff; transform:translate(-50%,-50%); transition:left .3s; }
+  .gauge-lbl { display:flex; justify-content:space-between; font-size:11px; color:#5a7186; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-weight:700; font-size:13px; }
+  .badge.up { background:#fde3c8; color:#8a4a00; } .badge.dn { background:#d7e9fd; color:#0b4a8a; }
+  .badge.eq { background:#d9f2e4; color:#0d5c40; } .badge.pin { background:#f8d7d7; color:#8a1f1f; }
+  .formula { font-family:Georgia,serif; font-size:13.5px; line-height:1.75; }
+  .small { font-size:11.8px; color:#5a7186; line-height:1.5; }
+  .chk { font-size:12.8px; display:flex; gap:7px; align-items:center; margin:5px 0; }
+  .foot { padding:0 20px 18px; font-size:11.5px; color:#5a7186; }
+  canvas#fan { width:100%; border-radius:10px; display:block; background:#0d2233; }
+  canvas#etrace { width:100%; display:block; }
+  .fcrow { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 6px; }
+  .fcchip { flex:1 1 150px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:#f8fbfc; }
+  .fch { font-size:12px; color:#5a7186; font-weight:700; }
+  .fcmed { font-size:21px; font-weight:800; color:#0e3a56; }
+  .fcline { font-size:12px; color:#41607a; margin-top:1px; }
+  .fcbar { height:6px; background:#e3edf2; border-radius:3px; margin-top:5px; }
+  .fcbar > div { height:6px; background:var(--teal); border-radius:3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>UTPF 氣體活塞模擬器 — 短期預測版</h1>
+  <div class="sub">一個汽缸，兩個氣體室 — <b style="color:var(--dem)">需求</b>（買家）在左邊，<b style="color:var(--sup)">供給</b>（賣家）在右邊，中間隔著一塊<b>自由活塞</b>。活塞會滑到兩邊壓力跟套利錨平衡的地方才停下來。<b>活塞停在哪裡，就是價錢。</b> 狀態方程式：<b>Π·V = Z·Q·T</b> · <b>新增：</b>汽缸下面有一個<b>集合預測</b> — 把正在看的市場複製很多份，用熵的大小打亂一點，再往前跑，就像天氣預報一樣 — 還用<b>香農熵</b>和<b>馮紐曼熵</b>的軌跡來評它的可信度。</div>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <canvas id="stage" width="960" height="440"></canvas>
+    <canvas id="chart" width="960" height="110">
+
+<div class="card" style="margin-top:10px">
+<h2>供需曲線 — 用氣體模型畫出來</h2>
+<p>這兩條線不是事先假設的，也沒有用到任何彈性係數。每一點都是用現在兩個室量到的 Z、Q、T，套進 Π = Z·Q·T／V 算出來的：把活塞從左移到右，需求室變大、供給室變小，兩邊的壓力跟著變，就畫出這兩條線。藍線是需求，橘線是供給。兩條線交叉的地方，就是兩邊壓力相等、市場結清的地方；白線是現在活塞的位置，金色虛線是公平價值的位置。活塞會一直往交叉點滑過去 — 這就是氣體版的供需平衡。</p>
+<canvas id="curves" width="960" height="230"></canvas>
+<p id="curvesNote">供需曲線計算中…</p>
+</div>
+</canvas>
+    <div class="card" style="margin-top:10px">
+      <h2>短期預測 — 像天氣預報一樣的集合預測</h2>
+      <canvas id="fan" width="960" height="230"></canvas>
+      <div class="fcrow">
+        <div class="fcchip" id="chip2"><div class="fch">T+2</div><div class="fcline">等待第一次預測…</div></div>
+        <div class="fcchip" id="chip4"><div class="fch">T+4</div><div class="fcline">等待第一次預測…</div></div>
+        <div class="fcchip" id="chip8"><div class="fch">T+8</div><div class="fcline">等待第一次預測…</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span class="small" id="fcConf">預測暖機中…</span>
+        <span><label class="chk" style="display:inline-flex;margin-right:8px"><input type="checkbox" id="fcAuto" checked> 自動更新</label><button id="fcBtn">馬上跑預測</button></span>
+      </div>
+      <div class="small" style="margin-top:6px">
+        <b>天氣預報的邏輯：</b> 氣象局從來不會只畫一條明天的線 — 它會把大氣模型跑很多次，每次起點稍微不同，再報告一個<i>機率錐</i>。這裡也一樣：把你正在看的市場複製 24 份、打亂一點，往前跑 8 個模擬小時。<b>打亂的大小由熵決定</b> — 平靜、低熵的市場，複製份幾乎一模一樣（錐很窄，值得相信）；暴風雨、高熵的市場，複製份差很多（錐很寬，信心低）。像看天氣預報一樣看這些小卡：中位數變化、80% 錐、上漲機率。這個預測的是<i>這個模型的市場</i>，不是真的股票。
+      </div>
+    </div>
+    <div class="card">
+      <h2>熵的軌跡 — 機率的足跡</h2>
+      <canvas id="etrace" width="960" height="110"></canvas>
+      <div class="small">兩條熵線，即時更新。<b>香農熵 H</b>（藍綠色）量的是最近的<i>紀錄</i>：過去幾分鐘價錢走勢有多難猜。<b>馮紐曼熵 S</b>（金色）量的是<i>狀態本身</i>：由市場巨觀狀態建出來的密度矩陣 ρ 的熵，再扣掉同調性 κ（粒子像鳥群一樣齊飛時，會把秩序藏在雜訊裡）。永遠有 S ≤ H — 兩條線之間的空隙，就是光看紀錄看不到的秩序。兩條線都很高時，預測錐會變寬，信心等級會下降。</div>
+    </div>
+    <div class="card" style="margin-top:10px">
+      <h2>怎麼看活塞</h2>
+      <div class="small">
+        每一個圓點就是一張活躍的單子，像氣體分子一樣彈來彈去。房間越<b>熱</b>（T = 選擇有多分散、多急），圓點跑得越快。
+        壓力 Π 是<i>量出來</i>的：圓點撞牆壁和活塞的力道就是壓力 — 沒有任何假設 — 而<b>Z = ΠV / (QT)</b>是拿每個室跟理想氣體打分數。
+        如果需求壓力大過供給壓力，活塞就向右滑：需求室變大、供給室被擠壓，價錢（看上面的尺）就上升。
+        在 T 不變時把一個室擠小，它的壓力會上升 — 這就是波以耳定律 — 直到兩邊再度平衡。那個停下來的地方，就是市場結清，用物理畫出來的。
+        活塞後面的金色彈簧是套利錨：它把價錢拉回公平價值。
+        供需曲線那張圖，是把上面這套氣體道理畫成兩條線：橫軸是活塞位置，縱軸是壓力。需求線往右下走（房間變大，壓力變小），供給線往右上走（房間被擠小，壓力變大），交叉點就是結清點。看交叉點在中央的左邊還是右邊，就知道價錢會往哪裡走。
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h2>市場狀態</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span class="big">價錢 <b id="priceOut">$150.00</b></span>
+        <span class="badge eq" id="flowBadge">活塞停穩</span>
+      </div>
+      <div class="read">
+        <span class="k">公平價值（錨）</span><span class="v" id="eqOut">$150.00</span>
+        <span class="k">市場壓力 Π = ln(公平價值/價錢）</span><span class="v" id="piOut">0.000</span>
+        <span class="k">壓力差 ΔΠ（需求 − 供給）</span><span class="v" id="dpiOut">0.000</span>
+        <span class="k">活塞位置</span><span class="v" id="posOut">centre</span>
+        <span class="k">交易活動</span><span class="v" id="tradesOut">0</span>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:#5a7186">市場 Z（兩個室合起來）</div>
+      <div class="gauge"><div class="ideal"></div><div class="dot" id="zDot" style="left:50%"></div></div>
+      <div class="gauge-lbl"><span>Z = 0.4 · 較軟（聚集）</span><span><b>Z = 1 理想</b></span><span>Z = 2.2 · 較硬（擁擠）</span></div>
+      <div class="read" style="margin-top:6px">
+        <span class="k">市場 Z</span><span class="v big" id="zOut">1.00</span>
+        <span class="k">狀態</span><span class="v" id="zState">Near ideal</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dem-h">● 需求室</span> <span style="float:right" class="sup-h">供給室 ●</span></h2>
+      <div class="read">
+        <span class="k">需求壓力 Π</span><span class="v" id="piD">0.00</span>
+        <span class="k">供給壓力 Π</span><span class="v" id="piS">0.00</span>
+        <span class="k">需求 Z</span><span class="v" id="zD">1.00</span>
+        <span class="k">供給 Z</span><span class="v" id="zS">1.00</span>
+        <span class="k">需求室體積 V</span><span class="v" id="vD">100%</span>
+        <span class="k">供給室體積 V</span><span class="v" id="vS">100%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>熵 — 市場的內在天氣</h2>
+      <div class="read">
+        <span class="k">香農熵 H · 最近的價錢走勢</span><span class="v" id="entH">—</span>
+        <span class="k">有效結果數 2<sup>H</sup></span><span class="v" id="entNeff">—</span>
+        <span class="k">微觀混亂 · 粒子速度</span><span class="v" id="entSpeed">—</span>
+        <span class="k">馮紐曼熵 S · −Tr(ρ ln ρ)</span><span class="v" id="entVN">—</span>
+        <span class="k">純度 Tr(ρ²)</span><span class="v" id="entPurity">—</span>
+        <span class="k">隱藏的秩序 · H − S</span><span class="v" id="entGap">—</span>
+        <span class="k">同調性 κ · 群聚</span><span class="v" id="entKappa">—</span>
+        <span class="k">機率軌跡 Tr(ρ) · 一定要是 1</span><span class="v" id="entTr">—</span>
+      </div>
+      <div style="margin-top:7px;font-size:12.8px">狀態：<b id="entRegime">—</b></div>
+      <div class="small" style="margin-top:5px">ρ 住在 8 個巨觀狀態上：壓力差的正負 × 活塞移動方向 × Z 大於或小於 1。對角線是市場待過每個狀態的次數；同調性來自粒子運動有多整齊。S 算的是狀態真正的混合程度；H 只看得到紀錄。</div>
+    </div>
+
+    <div class="card">
+      <h2>控制 — 需求（買家）</h2>
+      <div class="ctl"><label>溫度 T<sub>D</sub> — 買家的熱度 <b id="tDVal">0.95</b></label>
+        <input type="range" id="tD" min="0.15" max="3.2" step="0.05" value="0.95"></div>
+      <div class="ctl"><label>參與者 Q<sub>D</sub> — 活躍買單 <b id="qDVal">80</b></label>
+        <input type="range" id="qD" min="20" max="150" step="1" value="80"></div>
+      <h2 style="margin-top:14px">控制 — 供給（賣家）</h2>
+      <div class="ctl"><label>溫度 T<sub>S</sub> — 賣家的熱度 <b id="tSVal">0.95</b></label>
+        <input type="range" id="tS" min="0.15" max="3.2" step="0.05" value="0.95"></div>
+      <div class="ctl"><label>參與者 Q<sub>S</sub> — 活躍賣單 <b id="qSVal">80</b></label>
+        <input type="range" id="qS" min="20" max="150" step="1" value="80"></div>
+      <div class="ctl"><label>公平價值錨 <b id="eqVal">$150</b></label>
+        <input type="range" id="eq" min="40" max="400" step="5" value="150"></div>
+      <label class="chk"><input type="checkbox" id="anchor" checked> 套利錨彈簧（關 = 完全自由的活塞：只有在 Π<sub>D</sub> = Π<sub>S</sub> 時才停得住，而且會漂移）</label>
+      <label class="chk"><input type="checkbox" id="interact" checked> 真實市場交互作用（關 = 理想氣體，Z 約等於 1）</label>
+      <div class="small">開：圓點有大小（擁擠把 Z 推高過 1），天冷時會被人群拉回來（群聚把 Z 拉低過 1）。沒有體積滑桿了 — 每個室的空間就是活塞留給它的。這正是活塞的意義。</div>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="shoveR">推活塞 → 擠壓供給</button>
+        <button id="shoveL">← 推活塞，擠壓需求</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>實驗</h2>
+      <div class="btnrow">
+        <button data-scn="calm">平靜的一天</button>
+        <button data-scn="earnings">財報熱度</button>
+        <button class="warn" data-scn="squeeze">軋空</button>
+        <button class="warn" data-scn="panic">恐慌</button>
+        <button data-scn="freeze">凍結 — 群聚</button>
+        <button data-scn="deep">深又平靜</button>
+      </div>
+      <h2 style="margin-top:10px">股票預設</h2>
+      <div class="btnrow">
+        <button data-pre="aapl">AAPL — 深又平靜</button>
+        <button data-pre="spcx">SPCX — 熱又薄</button>
+        <button data-pre="gme">GME — 容易軋空</button>
+      </div>
+      <div class="btnrow"><button id="resetBtn">重置活塞、價錢和活動量</button></div>
+    </div>
+
+    <div class="card">
+      <h2>氣體公式（UTPF）</h2>
+      <div class="formula">
+        Π·V = Z·Q·T &nbsp;&nbsp;·&nbsp;&nbsp; Z = ΠV / (QT)<br>
+        活塞停穩 ⟺ ΔΠ 跟錨彈簧平衡；彈簧關 ⟺ Π<sub>D</sub> = Π<sub>S</sub><br>
+        波以耳定律：在 T 和 Q 不變時，Π·V 保持不變<br>
+        F = −QT·ln(V/V<sub>0</sub>) + φ(T) &nbsp;&nbsp;·&nbsp;&nbsp; G = F + ΠV
+      </div>
+      <div class="read" style="margin-top:6px">
+        <span class="k">功項 −QT·ln(V/V₀)，需求</span><span class="v" id="wD">0.00</span>
+        <span class="k">功項 −QT·ln(V/V₀)，供給</span><span class="v" id="wS">0.00</span>
+      </div>
+      <div class="small" style="margin-top:6px">Z 是狀態分數，不是買賣訊號。推動價錢的是活塞的方向 — 由 ΔΠ 帶動。</div>
+    </div>
+  </div>
+</div>
+<div class="foot">UTPF 氣體活塞模擬器 · 動力學模型：壓力是從約 4 秒滾動視窗內圓點撞牆壁和活塞量出來的；Z 是從量到的狀態（Π、V、Q、T）算出來的，絕不是假設的。活塞移動會對氣體作功，所以快速一推會讓被擠壓的室短暫升溫，之後恆溫器（新聞流／造市者）會讓它平靜下來 — 看壓力衝高再放鬆。市場不是氣體：人會看新聞；恆溫器和公平價值彈簧就是代表這個。</div>
+
+<script>
+"use strict";
+/* ============ UTPF Gas Piston Simulator ============
+   One cylinder, two chambers, one free piston.
+   Pressure is MEASURED from particle collisions (walls + piston).
+   Z = P_meas * V / (Q * T * ZNORM); ZNORM fixed by calibration so
+   an ideal (non-interacting) gas reads Z = 1.
+   價錢 = fair * exp((pistonX - centre) / LAMBDA).              */
+
+const ZNORM = 626;          // calibration constant for this geometry (set headlessly; theory ~650)
+const BOYLE_T = 1.15;       // below this, herding pull-back can win
+const PARTICLE_R = 3;
+const XL = 68, XR = 892, Y0 = 118, Y1 = 322;   // cylinder inner bounds
+const X0 = 480;                                // piston centre = fair value
+const LAMBDA = 460;                            // px per e-fold of price
+const PISTON_HW = 7;                           // piston half-width
+const PMIN = XL + 90 + PISTON_HW, PMAX = XR - 90 - PISTON_HW;
+const V0 = (X0 - PISTON_HW - XL) * (Y1 - Y0) / 100;  // chamber volume at centre
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const chart = document.getElementById('chart');
+const cctx = chart.getContext('2d');
+const $ = id => document.getElementById(id);
+
+function gauss() { return (Math.random() + Math.random() + Math.random() + Math.random() - 2) / 1.4; }
+
+const piston = { x: X0, v: 0 };
+
+class Chamber {
+  constructor(side, color, dark) {
+    this.side = side; this.color = color; this.dark = dark;
+    this.T = 0.95; this.qTarget = 80; this.parts = [];
+    this.momWindow = 0; this.winTime = 0; this.winHits = 0; this.bucketT = 0; this.hist = [];
+    this.P = 0; this.Z = 1;
+  }
+  px() { return this._pist ? this._pist.x : piston.x; }
+  bounds() {
+    return this.side === 'D' ? { x0: XL, x1: this.px() - PISTON_HW }
+                             : { x0: this.px() + PISTON_HW, x1: XR };
+  }
+  get W() { const b = this.bounds(); return b.x1 - b.x0; }
+  get A() { return this.W * (Y1 - Y0); }
+  get V() { return this.A / 100; }
+  get Q() { return this.parts.length; }
+  get Pi() { return this.Z * this.Q * this.T / this.V; }
+  spawn(n) {
+    const b = this.bounds();
+    for (let i = 0; i < n; i++) {
+      const sp = Math.sqrt(this.T) * 62;
+      this.parts.push({ x: b.x0 + 16 + Math.random() * Math.max(10, this.W - 32),
+                        y: Y0 + 16 + Math.random() * (Y1 - Y0 - 32),
+                        vx: gauss() * sp, vy: gauss() * sp });
+    }
+  }
+  step(dt, interact) {
+    if (this.Q < this.qTarget && Math.random() < dt * 14) this.spawn(1);
+    if (this.Q > this.qTarget && Math.random() < dt * 14) this.parts.pop();
+    const { x0, x1 } = this.bounds();
+    const vp = this._pist ? this._pist.v : piston.v;
+    // thermostat (heat bath): hold <v^2> = 1300*T
+    if (this.Q > 0) {
+      let mv = 0;
+      for (const p of this.parts) mv += p.vx * p.vx + p.vy * p.vy;
+      mv /= this.Q;
+      if (mv > 0) {
+        const f = Math.sqrt((1300 * this.T) / mv);
+        const s = 1 + (f - 1) * Math.min(1, dt * 2.5);
+        for (const p of this.parts) { p.vx *= s; p.vy *= s; }
+      }
+    }
+    // herding pull-back near walls when cold
+    const cold = interact ? Math.max(0, (BOYLE_T - this.T) / BOYLE_T) : 0;
+    const gamma = 0.8 * cold;
+    const isD = this.side === 'D';
+    for (const p of this.parts) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (gamma > 0) {
+        if (p.x - x0 < 27 && p.vx < 0) p.vx -= p.vx * gamma * dt;
+        if (x1 - p.x < 27 && p.vx > 0) p.vx -= p.vx * gamma * dt;
+        if (p.y - Y0 < 27 && p.vy < 0) p.vy -= p.vy * gamma * dt;
+        if (Y1 - p.y < 27 && p.vy > 0) p.vy -= p.vy * gamma * dt;
+      }
+      // fixed outer wall (demand: left; supply: right)
+      if (isD) {
+        if (p.x < x0 + PARTICLE_R) {
+          if (p.vx < 0) { this.momWindow += 2 * -p.vx; this.winHits++; }
+          p.vx = Math.abs(p.vx); p.x = x0 + PARTICLE_R;
+        }
+      } else {
+        if (p.x > x1 - PARTICLE_R) {
+          if (p.vx > 0) { this.momWindow += 2 * p.vx; this.winHits++; }
+          p.vx = -Math.abs(p.vx); p.x = x1 - PARTICLE_R;
+        }
+      }
+      // piston face (moving wall): reflect in the piston's frame
+      if (isD) {
+        if (p.x > x1 - PARTICLE_R) {
+          const rel = p.vx - vp;
+          if (rel > 0) { this.momWindow += 2 * rel; this.winHits++; p.vx = 2 * vp - p.vx; }
+          else p.vx = vp - (vp - p.vx) * 0.3;
+          p.x = x1 - PARTICLE_R;
+        }
+      } else {
+        if (p.x < x0 + PARTICLE_R) {
+          const rel = p.vx - vp;
+          if (rel < 0) { this.momWindow += 2 * -rel; this.winHits++; p.vx = 2 * vp - p.vx; }
+          else p.vx = vp - (vp - p.vx) * 0.3;
+          p.x = x0 + PARTICLE_R;
+        }
+      }
+      // top / bottom walls
+      if (p.y < Y0 + PARTICLE_R) {
+        if (p.vy < 0) { this.momWindow += 2 * -p.vy; this.winHits++; }
+        p.vy = Math.abs(p.vy); p.y = Y0 + PARTICLE_R;
+      }
+      if (p.y > Y1 - PARTICLE_R) {
+        if (p.vy > 0) { this.momWindow += 2 * p.vy; this.winHits++; }
+        p.vy = -Math.abs(p.vy); p.y = Y1 - PARTICLE_R;
+      }
+    }
+    if (interact) this.interact();
+    // rolling ~4 s pressure window
+    this.winTime += dt; this.bucketT += dt;
+    if (this.bucketT >= 0.25) {
+      this.hist.push({ mom: this.momWindow, t: this.winTime, hits: this.winHits });
+      this.momWindow = 0; this.winTime = 0; this.bucketT = 0; this.winHits = 0;
+      if (this.hist.length > 16) this.hist.shift();
+      let M = 0, Tt = 0, H = 0;
+      for (const b of this.hist) { M += b.mom; Tt += b.t; H += b.hits; }
+      if (H >= 6 && Tt > 0 && this.Q > 0) {
+        const per = 2 * (this.W + (Y1 - Y0));
+        const Praw = M / (per * Tt);
+        this.P = Praw;
+        const z = (Praw * this.A) / (this.Q * this.T) / ZNORM;
+        this.Z += (z - this.Z) * 0.3;
+      }
+    }
+  }
+  interact() {
+    // excluded volume: dots have size, a crowded chamber pushes back (Z > 1)
+    const ps = this.parts, n = ps.length;
+    for (let i = 0; i < n; i++) {
+      const a = ps[i];
+      for (let j = i + 1; j < n; j++) {
+        const b = ps[j];
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 > 36 * 36 || d2 === 0) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
+        if (d < PARTICLE_R * 2) {
+          const rvx = b.vx - a.vx, rvy = b.vy - a.vy, vn = rvx * nx + rvy * ny;
+          if (vn < 0) { a.vx += vn * nx; a.vy += vn * ny; b.vx -= vn * nx; b.vy -= vn * ny; }
+          const push = (PARTICLE_R * 2 - d) / 2;
+          a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
+        }
+      }
+    }
+  }
+  cloneFor(pist) { // deep copy bound to another piston — the ensemble's copies
+    const c = Object.create(Chamber.prototype);
+    c.side = this.side; c.color = this.color; c.dark = this.dark;
+    c.T = this.T; c.qTarget = this.qTarget;
+    c.parts = this.parts.map(p => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy }));
+    c.momWindow = 0; c.winTime = 0; c.winHits = 0; c.bucketT = 0;
+    c.hist = this.hist.map(b => ({ mom: b.mom, t: b.t, hits: b.hits }));
+    c.P = this.P; c.Z = this.Z; c._pist = pist;
+    return c;
+  }
+  draw() {
+    const { x0, x1 } = this.bounds();
+    ctx.fillStyle = this.color; ctx.globalAlpha = 0.16;
+    ctx.fillRect(x0, Y0, x1 - x0, Y1 - Y0); ctx.globalAlpha = 1;
+    ctx.fillStyle = this.color;
+    for (const p of this.parts) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, PARTICLE_R, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+const dem = new Chamber('D', '#2277cc', '#bcd9f7');
+const sup = new Chamber('S', '#dd6633', '#f8d3bd');
+dem.spawn(80); sup.spawn(80);
+
+const sim = { fair: 150, trades: 0, history: [], last: performance.now() };
+Object.defineProperty(sim, 'price', { get() { return sim.fair * Math.exp((piston.x - X0) / LAMBDA); } });
+window.__sim = { dem, sup, sim, piston };
+
+function readControls() {
+  dem.T = +$('tD').value; dem.qTarget = +$('qD').value;
+  sup.T = +$('tS').value; sup.qTarget = +$('qS').value;
+  sim.fair = +$('eq').value;
+  $('tDVal').textContent = dem.T.toFixed(2); $('qDVal').textContent = dem.qTarget;
+  $('tSVal').textContent = sup.T.toFixed(2); $('qSVal').textContent = sup.qTarget;
+  $('eqVal').textContent = '$' + sim.fair;
+}
+['tD','qD','tS','qS','eq'].forEach(id => $(id).addEventListener('input', readControls));
+readControls();
+
+function setSliders(o) { for (const k in o) { if ($(k)) $(k).value = o[k]; } readControls(); }
+const scenarios = {
+  calm:     { tD:0.95, qD:80,  tS:0.95, qS:80  },
+  earnings: { tD:2.30, qD:115, tS:1.25, qS:80  },
+  squeeze:  { tD:2.45, qD:130, tS:1.10, qS:55  },
+  panic:    { tD:2.60, qD:95,  tS:2.60, qS:130 },
+  freeze:   { tD:0.32, qD:95,  tS:0.32, qS:95  },
+  deep:     { tD:0.70, qD:90,  tS:0.70, qS:90  }
+};
+const presets = {
+  aapl: { tD:0.80, qD:95,  tS:0.80, qS:95,  eq:340, start: 1.00 },
+  spcx: { tD:2.05, qD:100, tS:1.60, qS:70,  eq:226, start: 0.72 },
+  gme:  { tD:1.85, qD:110, tS:1.30, qS:60,  eq:150, start: 0.95 }
+};
+document.querySelectorAll('[data-scn]').forEach(b => b.addEventListener('click', () => setSliders(scenarios[b.dataset.scn])));
+document.querySelectorAll('[data-pre]').forEach(b => b.addEventListener('click', () => {
+  const p = presets[b.dataset.pre]; setSliders(p);
+  piston.x = X0 + LAMBDA * Math.log(p.start); piston.v = 0; sim.history = [];
+}));
+$('resetBtn').addEventListener('click', () => { piston.x = X0; piston.v = 0; sim.trades = 0; sim.history = []; });
+$('shoveR').addEventListener('click', () => { piston.v += 240; });
+$('shoveL').addEventListener('click', () => { piston.v -= 240; });
+
+function drawStage(dPi) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // price ruler
+  const ry = 66;
+  ctx.strokeStyle = '#3d5a70'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(XL, ry); ctx.lineTo(XR, ry); ctx.stroke();
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  for (const r of [0.5, 0.75, 1, 1.5, 2]) {
+    const x = X0 + LAMBDA * Math.log(r);
+    ctx.strokeStyle = r === 1 ? '#d4a017' : '#3d5a70'; ctx.lineWidth = r === 1 ? 3 : 1.5;
+    ctx.beginPath(); ctx.moveTo(x, ry - 7); ctx.lineTo(x, ry + 7); ctx.stroke();
+    ctx.fillStyle = r === 1 ? '#ffd34d' : '#9fb6c6';
+    ctx.fillText('x' + r, x, ry - 12);
+  }
+  ctx.fillStyle = '#ffd34d'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('公平價值', X0, ry + 24);
+  // piston marker on the ruler
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.moveTo(piston.x, ry + 12); ctx.lineTo(piston.x - 7, ry + 24); ctx.lineTo(piston.x + 7, ry + 24); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 19px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('價錢  $' + sim.price.toFixed(2), XL, 34);
+  ctx.font = '12.5px sans-serif'; ctx.fillStyle = '#9fb6c6'; ctx.textAlign = 'right';
+  ctx.fillText('這把尺就是價錢刻度 — 活塞標記停在哪裡就是價錢', XR, 34);
+
+  // chambers + particles
+  dem.draw(); sup.draw();
+  // cylinder walls
+  ctx.strokeStyle = '#9fb6c6'; ctx.lineWidth = 5;
+  ctx.strokeRect(XL - 4, Y0 - 4, XR - XL + 8, Y1 - Y0 + 8);
+  // piston
+  const px = piston.x;
+  const grad = ctx.createLinearGradient(px - PISTON_HW, 0, px + PISTON_HW, 0);
+  grad.addColorStop(0, '#5a7186'); grad.addColorStop(0.5, '#d7e3ec'); grad.addColorStop(1, '#5a7186');
+  ctx.fillStyle = grad;
+  ctx.fillRect(px - PISTON_HW, Y0 - 12, PISTON_HW * 2, Y1 - Y0 + 24);
+  ctx.strokeStyle = '#14324a'; ctx.lineWidth = 2;
+  ctx.strokeRect(px - PISTON_HW, Y0 - 12, PISTON_HW * 2, Y1 - Y0 + 24);
+  if (Math.abs(piston.v) > 25) {  // motion streaks
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    const dir = Math.sign(piston.v);
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath(); ctx.moveTo(px - dir * (PISTON_HW + i * 9), Y0 + 26);
+      ctx.lineTo(px - dir * (PISTON_HW + i * 9), Y1 - 26); ctx.stroke();
+    }
+  }
+  ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#14324a';
+  ctx.save(); ctx.translate(px, (Y0 + Y1) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('活塞', 0, 4.5); ctx.restore();
+  // captions
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#7fc4ff'; ctx.fillText('需求室 — 買家', (XL + px) / 2, Y1 + 34);
+  ctx.fillStyle = '#ffb08a'; ctx.fillText('供給室 — 賣家', (px + XR) / 2, Y1 + 34);
+  ctx.font = '12.5px sans-serif'; ctx.fillStyle = '#c8d9e4';
+  ctx.fillText('V ' + Math.round(dem.V / V0 * 100) + '% · Π ' + dem.Pi.toFixed(2) + ' · Z ' + dem.Z.toFixed(2), (XL + px) / 2, Y1 + 54);
+  ctx.fillText('V ' + Math.round(sup.V / V0 * 100) + '% · Π ' + sup.Pi.toFixed(2) + ' · Z ' + sup.Z.toFixed(2), (px + XR) / 2, Y1 + 54);
+  ctx.font = 'bold 13.5px sans-serif'; ctx.fillStyle = '#ffffff';
+  const msg = Math.abs(piston.v) > 8 ? (piston.v > 0 ? '活塞向右滑 — 價錢上升' : '活塞向左滑 — 價錢下跌')
+            : (piston.x <= PMIN + 1 || piston.x >= PMAX - 1) && Math.abs(dPi) > 0.04 ? '活塞卡在擋板 — 漲停／跌停'
+            : '活塞停穩 — 市場結清';
+  ctx.fillText(msg, X0, Y1 + 82);
+}
+
+function drawChart() {
+  const w = chart.width, h = chart.height;
+  cctx.clearRect(0, 0, w, h);
+  cctx.fillStyle = '#ffffff'; cctx.fillRect(0, 0, w, h);
+  if (sim.history.length < 2) return;
+  const xs = sim.history.slice(-360);
+  let mn = Math.min(...xs, sim.fair), mx = Math.max(...xs, sim.fair);
+  const pad = (mx - mn) * 0.15 + 0.5; mn -= pad; mx += pad;
+  const Y = v => h - 8 - (v - mn) / (mx - mn) * (h - 16);
+  cctx.strokeStyle = '#d4a017'; cctx.setLineDash([5, 4]); cctx.lineWidth = 1.2;
+  cctx.beginPath(); cctx.moveTo(0, Y(sim.fair)); cctx.lineTo(w, Y(sim.fair)); cctx.stroke(); cctx.setLineDash([]);
+  cctx.strokeStyle = '#14324a'; cctx.lineWidth = 1.8; cctx.beginPath();
+  xs.forEach((v, i) => { const x = i / 359 * w; i ? cctx.lineTo(x, Y(v)) : cctx.moveTo(x, Y(v)); });
+  cctx.stroke();
+  cctx.fillStyle = '#5a7186'; cctx.font = '11px sans-serif'; cctx.textAlign = 'left';
+  cctx.fillText('價錢歷史（金色虛線 = 公平價值）', 8, 14);
+}
+
+
+/* ================================================================
+   FORECAST EDITION — entropy engine + ensemble forecast
+   Weather logic, in three parts:
+   1) SHANNON ENTROPY of what the market actually did: the rolling
+      distribution of signed price moves (9 bins) and of particle
+      speeds. H = -sum p ln p. High H = the recent past looks like
+      static: many outcomes were nearly equally likely.
+   2) VON NEUMANN ENTROPY of the market STATE: build an 8-state
+      density matrix rho over macro-states (pressure-gap sign x
+      piston-motion sign x Z-regime). rho mixes the observed state
+      frequencies (diagonal) with a coherent pure state weighted by
+      the particle-alignment order parameter kappa (herding = phase
+      coherence). S_vN = -Tr(rho ln rho) = -sum lambda ln lambda.
+      Theorem on screen: S_vN <= H(diagonal); the gap is the order
+      hidden inside apparent randomness. Tr(rho) = 1 exactly.
+   3) ENSEMBLE FORECAST: like a weather service, clone the live
+      market N times, jitter each copy's micro-state (the jitter
+      size is SET BY THE ENTROPY — a stormy, high-entropy market
+      gets wilder copies), run every copy forward, and report the
+      CONE of outcomes: median, 80% band, P(up), and a confidence
+      grade driven by entropy + cone width. Not one line — a cone.
+   ================================================================ */
+
+function eigSym(Ain) { // cyclic Jacobi eigenvalues of a symmetric matrix
+  const n = Ain.length, A = Ain.map(r => r.slice());
+  for (let sweep = 0; sweep < 60; sweep++) {
+    let off = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) off += A[i][j] * A[i][j];
+    if (off < 1e-14) break;
+    for (let p = 0; p < n - 1; p++) for (let q = p + 1; q < n; q++) {
+      if (Math.abs(A[p][q]) < 1e-15) continue;
+      const theta = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]);
+      const c = Math.cos(theta), s = Math.sin(theta);
+      for (let k = 0; k < n; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+      for (let k = 0; k < n; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+    }
+  }
+  return A.map((r, i) => r[i]).sort((a, b) => b - a);
+}
+function shannonBits(counts) { // counts -> H in bits, Laplace-smoothed by caller if wanted
+  let tot = 0; for (const c of counts) tot += c;
+  if (tot <= 0) return 0;
+  let H = 0;
+  for (const c of counts) { if (c > 0) { const p = c / tot; H -= p * Math.log2(p); } }
+  return H;
+}
+
+const FC = {
+  sampleDt: 0.25, clock: 0, lastPrice: null,
+  retBins: new Array(9).fill(0), retHist: [],       // rolling signed-return outcomes
+  stateCounts: new Array(8).fill(0), stateHist: [], // rolling macro-state occupation
+  H: 0, Hspeed: 0, SvN: 0, purity: 1, kappa: 0, gap: 0, trRho: 1,
+  traceH: [], traceS: [], ensemble: null, ensClock: 0, ran: 0
+};
+const RET_EDGES = [-0.004, -0.002, -0.001, -0.0004, 0.0004, 0.001, 0.002, 0.004];
+function retBin(x) { let i = 0; while (i < RET_EDGES.length && x > RET_EDGES[i]) i++; return i; }
+
+function alignment(ch) { // order parameter: |mean unit velocity| — 0 = gas chaos, 1 = flocking
+  let sx = 0, sy = 0, n = 0;
+  for (const p of ch.parts) { const m = Math.hypot(p.vx, p.vy); if (m > 1) { sx += p.vx / m; sy += p.vy / m; n++; } }
+  return n ? Math.hypot(sx, sy) / n : 0;
+}
+function speedEntropy() {
+  const bins = new Array(10).fill(0);
+  for (const ch of [dem, sup]) for (const p of ch.parts) {
+    const b = Math.min(9, Math.floor(Math.hypot(p.vx, p.vy) / 34)); bins[b]++;
+  }
+  return shannonBits(bins);
+}
+
+function updateEntropies(dPi) {
+  // macro-state: (dPi>0) x (price rising over the sample) x (market Z>1)
+  const zShow = (dem.Z * dem.Q * dem.T + sup.Z * sup.Q * sup.T) / Math.max(1e-9, dem.Q * dem.T + sup.Q * sup.T);
+  const rising = FC.last價錢 !== null && sim.price >= FC.lastPrice;
+  const idx = (dPi > 0 ? 4 : 0) + (rising ? 2 : 0) + (zShow > 1 ? 1 : 0);
+  FC.stateHist.push(idx); if (FC.stateHist.length > 240) FC.stateHist.shift();
+  FC.stateCounts.fill(0); for (const s of FC.stateHist) FC.stateCounts[s]++;
+  if (FC.last價錢 !== null) {
+    const r = Math.log(sim.price / FC.lastPrice);
+    FC.retHist.push(retBin(r)); if (FC.retHist.length > 240) FC.retHist.shift();
+    FC.retBins.fill(0); for (const b of FC.retHist) FC.retBins[b]++;
+  }
+  FC.last價錢 = sim.price;
+  // probabilities with a whisper of Laplace smoothing
+  const tot = FC.stateHist.length + 8 * 0.5;
+  const p = FC.stateCounts.map(c => (c + 0.5) / tot);
+  FC.H = shannonBits(FC.retBins.length && FC.retHist.length ? FC.retBins : [1]);
+  FC.Hspeed = speedEntropy();
+  FC.kappa = Math.min(0.95, (alignment(dem) + alignment(sup)) / 2 * 1.6);
+  // density matrix: rho = (1-kappa) diag(p) + kappa |psi><psi|, psi_i = sqrt(p_i)
+  const n = 8, rho = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++)
+    rho[i][j] = FC.kappa * Math.sqrt(p[i] * p[j]) + (i === j ? (1 - FC.kappa) * p[i] : 0);
+  let tr = 0; for (let i = 0; i < n; i++) tr += rho[i][i];
+  FC.trRho = tr;
+  const lam = eigSym(rho);
+  FC.SvN = 0; FC.purity = 0;
+  for (const L of lam) { if (L > 1e-12) FC.SvN -= L * Math.log2(L); FC.purity += L * L; }
+  const Hdiag = shannonBits(p.map(x => x * 10000)); // H of the diagonal, same units
+  FC.gap = Math.max(0, Hdiag - FC.SvN);
+  FC.traceH.push(FC.H); FC.traceS.push(FC.SvN);
+  if (FC.traceH.length > 720) { FC.traceH.shift(); FC.traceS.shift(); }
+}
+
+/* ---------- ensemble forecast ---------- */
+const ENS = { members: 24, horizonSteps: 240, dt: 1 / 30, sampleEvery: 8 }; // 8 sim-seconds ahead
+function quantile(sorted, q) { return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)))]; }
+
+function runEnsemble() {
+  const jitter = 0.02 + 0.12 * (FC.H / Math.log2(9));   // entropy sets the chaos, as in weather models
+  const anchored = $('anchor').checked, liveInteract = $('interact').checked;
+  const paths = [];
+  for (let m = 0; m < ENS.members; m++) {
+    const mp = { x: piston.x + gauss() * 3 * (1 + FC.H), v: piston.v + gauss() * 6 };
+    const d = dem.cloneFor(mp), s = sup.cloneFor(mp);
+    d.T *= 1 + gauss() * 0.03; s.T *= 1 + gauss() * 0.03;
+    for (const ch of [d, s]) for (const pt of ch.parts) { pt.vx *= 1 + gauss() * jitter; pt.vy *= 1 + gauss() * jitter; }
+    const path = [sim.fair * Math.exp((mp.x - X0) / LAMBDA)];
+    for (let k = 1; k <= ENS.horizonSteps; k++) {
+      const dPi = d.Pi - s.Pi;
+      const spring = anchored ? 0.9 * (mp.x - X0) : 0;
+      mp.v += (800 * dPi - spring - 1.6 * mp.v) * ENS.dt;
+      mp.v = Math.max(-170, Math.min(170, mp.v));
+      mp.x += mp.v * ENS.dt;
+      if (mp.x < PMIN) { mp.x = PMIN; mp.v = 0; }
+      if (mp.x > PMAX) { mp.x = PMAX; mp.v = 0; }
+      const useI = liveInteract && (k % 3 === 0); // clones run crowding/herding at 1/3 rate for speed
+      d.step(ENS.dt, useI); s.step(ENS.dt, useI);
+      if (k % ENS.sampleEvery === 0) path.push(sim.fair * Math.exp((mp.x - X0) / LAMBDA));
+    }
+    paths.push(path);
+  }
+  // quantiles per sample index
+  const nPts = paths[0].length, qs = { p10: [], p25: [], med: [], p75: [], p90: [] };
+  for (let i = 0; i < nPts; i++) {
+    const col = paths.map(p => p[i]).sort((a, b) => a - b);
+    qs.p10.push(quantile(col, 0.10)); qs.p25.push(quantile(col, 0.25)); qs.med.push(quantile(col, 0.50));
+    qs.p75.push(quantile(col, 0.75)); qs.p90.push(quantile(col, 0.90));
+  }
+  const now = sim.price, hz = {};
+  for (const [label, idx] of [['T+2', 8], ['T+4', 16], ['T+8', 30]]) { // 30 samples x 0.267 s = the full 8 s horizon
+    const col = paths.map(p => p[idx]).sort((a, b) => a - b);
+    const up = paths.filter(p => p[idx] > now).length / paths.length;
+    hz[label] = { med: (quantile(col, 0.5) / now - 1) * 100, lo: (quantile(col, 0.1) / now - 1) * 100,
+                  hi: (quantile(col, 0.9) / now - 1) * 100, up: Math.round(up * 100) };
+  }
+  const width8 = (hz['T+8'].hi - hz['T+8'].lo);
+  const score = 0.5 * (1 - FC.SvN / 3) + 0.5 * (1 - Math.min(1, width8 / 30));
+  FC.ensemble = { qs, hz, width8, score, grade: score >= 0.62 ? '高' : score >= 0.42 ? '中等' : '低', at: new Date() };
+  FC.ran++;
+  drawFan(); updateForecastUI();
+  window.__forecast = FC.ensemble;
+}
+
+function drawFan() {
+  const c = $('fan'), g = c.getContext('2d'), w = c.width, h = c.height;
+  g.clearRect(0, 0, w, h); g.fillStyle = '#0d2233'; g.fillRect(0, 0, w, h);
+  if (!FC.ensemble) { g.fillStyle = '#9fb6c6'; g.font = '13px sans-serif'; g.textAlign = 'center'; g.fillText('集合預測暖機中 — 幾秒後第一次預測…', w / 2, h / 2); return; }
+  const { p10, p90, p25, p75, med } = FC.ensemble.qs, n = med.length;
+  let mn = Math.min(...p10), mx = Math.max(...p90); const pad = (mx - mn) * 0.12 + 0.4; mn -= pad; mx += pad;
+  const X = i => 46 + i / (n - 1) * (w - 66), Y = v => h - 22 - (v - mn) / (mx - mn) * (h - 40);
+  const band = (lo, hi, fill) => { g.beginPath(); hi.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); for (let i = n - 1; i >= 0; i--) g.lineTo(X(i), Y(lo[i])); g.closePath(); g.fillStyle = fill; g.fill(); };
+  band(p10, p90, 'rgba(27,138,122,0.20)'); band(p25, p75, 'rgba(27,138,122,0.38)');
+  g.strokeStyle = '#d4a017'; g.setLineDash([5, 4]); g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(0, Y(sim.price)); g.lineTo(w, Y(sim.price)); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath();
+  med.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); g.stroke();
+  g.fillStyle = '#9fb6c6'; g.font = '11px sans-serif'; g.textAlign = 'left';
+  g.fillText('現在', X(0) - 8, h - 6); g.fillText('T+8（模擬小時）', X(n - 1) - 52, h - 6);
+  g.fillText('$' + mx.toFixed(0), 4, Y(mx) + 10); g.fillText('$' + mn.toFixed(0), 4, Y(mn) + 2);
+  g.fillStyle = '#ffffff'; g.font = 'bold 12px sans-serif';
+  g.fillText('集合預測錐 — 白線 = 中位數路徑 · 深色帶 = 中間 50% · 淺色帶 = 80% · 金色虛線 = 現在價錢', 46, 15);
+}
+
+function drawTrace() {
+  const c = $('etrace'), g = c.getContext('2d'), w = c.width, h = c.height;
+  g.clearRect(0, 0, w, h); g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+  const H = FC.traceH.slice(-360), S = FC.traceS.slice(-360);
+  if (H.length < 2) return;
+  const Y = v => h - 8 - (v / 3.3) * (h - 18);
+  g.strokeStyle = '#ccd6e0'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, Y(3)); g.lineTo(w, Y(3)); g.stroke();
+  const line = (xs, col) => { g.strokeStyle = col; g.lineWidth = 1.8; g.beginPath(); xs.forEach((v, i) => { const x = i / 359 * w; i ? g.lineTo(x, Y(v)) : g.moveTo(x, Y(v)); }); g.stroke(); };
+  line(S, '#d4a017'); line(H, '#1b8a7a');
+  g.font = '11px sans-serif'; g.textAlign = 'left';
+  g.fillStyle = '#1b8a7a'; g.fillText('— 香農熵 H（已經發生的事）', 8, 13);
+  g.fillStyle = '#a87f00'; g.fillText('— 馮紐曼熵 S（狀態本身）', 190, 13);
+  g.fillStyle = '#5a7186'; g.fillText('位元 · 上限約 3.17', w - 118, 13);
+}
+
+function fmtPct(x) { return (x >= 0 ? '+' : '') + x.toFixed(1) + '%'; }
+function updateForecastUI() {
+  const E = FC.ensemble; if (!E) return;
+  for (const label of ['T+2', 'T+4', 'T+8']) {
+    const z = E.hz[label], el = $('chip' + label.slice(2));
+    if (el) el.innerHTML = '<div class="fch">' + label + ' <span style="font-weight:400;font-size:11px">模擬小時</span></div>' +
+      '<div class="fcmed">' + fmtPct(z.med) + '</div>' +
+      '<div class="fcline">80% 錐 ' + fmtPct(z.lo) + ' … ' + fmtPct(z.hi) + '</div>' +
+      '<div class="fcline">上漲機率 <b>' + z.up + '%</b></div>' +
+      '<div class="fcbar"><div style="width:' + z.up + '%"></div></div>';
+  }
+  $('fcConf').innerHTML = '預測信心：<b>' + E.grade + '</b> (score ' + E.score.toFixed(2) + '）· 集合數 ' + ENS.members +
+    ' 個擾動副本 · 擾動大小由熵決定（H = ' + FC.H.toFixed(2) + ' 位元）· 上次執行 ' + E.at.toLocaleTimeString();
+}
+function updateEntropyPanel() {
+  $('entH').textContent = FC.H.toFixed(2) + ' 位元';
+  $('entNeff').textContent = Math.pow(2, FC.H).toFixed(1) + '／9';
+  $('entSpeed').textContent = FC.Hspeed.toFixed(2) + ' 位元';
+  $('entVN').textContent = FC.SvN.toFixed(2) + ' 位元';
+  $('entPurity').textContent = FC.purity.toFixed(3);
+  $('entGap').textContent = FC.gap.toFixed(2) + ' 位元';
+  $('entKappa').textContent = FC.kappa.toFixed(2);
+  $('entTr').textContent = FC.trRho.toFixed(3);
+  const frac = FC.H / Math.log2(9);
+  $('entRegime').textContent = frac < 0.40 ? '有序 — 趨勢會持續' : frac < 0.75 ? '混合 — 看得出趨勢，但有雜訊' : '暴風雨 — 幾乎是隨機漫步';
+}
+
+function tickForecast(dt, dPi) {
+  FC.clock += dt; FC.ensClock += dt;
+  if (FC.clock >= FC.sampleDt) { FC.clock = 0; updateEntropies(dPi); drawTrace(); updateEntropyPanel(); }
+  if (FC.ensClock > 4 && !FC.ensemble) { FC.ensClock = 0; runEnsemble(); }
+  else if ($('fcAuto').checked && FC.ensClock > 16) { FC.ensClock = 0; runEnsemble(); }
+  else if (FC.ensemble && FC.ran > 0 && (FC.ensClock % 2) < dt) drawFan();
+}
+$('fcBtn').addEventListener('click', () => { FC.ensClock = 0; runEnsemble(); });
+window.__fc = FC;
+
+let uiTick = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - sim.last) / 1000); sim.last = now;
+  const interact = $('interact').checked;
+  // piston dynamics: pressure gap pushes, spring (arbitrage) anchors, friction damps
+  const dPi0 = dem.Pi - sup.Pi;
+  const spring = $('anchor').checked ? 0.9 * (piston.x - X0) : 0;
+  const acc = 800 * dPi0 - spring - 1.6 * piston.v;
+  piston.v += acc * dt;
+  piston.v = Math.max(-170, Math.min(170, piston.v));
+  piston.x += piston.v * dt;
+  if (piston.x < PMIN) { piston.x = PMIN; piston.v = 0; }
+  if (piston.x > PMAX) { piston.x = PMAX; piston.v = 0; }
+  const sub = 2, sdt = dt / sub;
+  for (let i = 0; i < sub; i++) { dem.step(sdt, interact); sup.step(sdt, interact); }
+  sim.trades += (Math.abs(piston.v) * 0.55 + Math.abs(dPi0) * 22) * dt;
+
+  drawStage(dPi0);
+  if ((uiTick += dt) > 0.12) {
+    uiTick = 0;
+    sim.history.push(sim.price); if (sim.history.length > 720) sim.history.shift();
+    drawChart();
+    drawCurves();
+    const zShow = (dem.Z * dem.Q * dem.T + sup.Z * sup.Q * sup.T) / Math.max(1e-9, dem.Q * dem.T + sup.Q * sup.T);
+    $('priceOut').textContent = '$' + sim.price.toFixed(2);
+    $('eqOut').textContent = '$' + sim.fair.toFixed(2);
+    $('piOut').textContent = Math.log(sim.fair / sim.price).toFixed(3);
+    $('dpiOut').textContent = dPi0.toFixed(3);
+    const off = piston.x - X0;
+    $('posOut').textContent = Math.abs(off) < 3 ? '中央' : (off > 0 ? '+' : '') + Math.round(off) + ' px (' + (off > 0 ? 'into supply' : 'into demand') + ')';
+    $('tradesOut').textContent = Math.round(sim.trades);
+    $('piD').textContent = dem.Pi.toFixed(2); $('piS').textContent = sup.Pi.toFixed(2);
+    $('zD').textContent = dem.Z.toFixed(2); $('zS').textContent = sup.Z.toFixed(2);
+    $('vD').textContent = Math.round(dem.V / V0 * 100) + '%'; $('vS').textContent = Math.round(sup.V / V0 * 100) + '%';
+    $('zOut').textContent = zShow.toFixed(2);
+    const zp = 50 + (zShow - 1) / 1.2 * 50;
+    $('zDot').style.left = Math.max(1, Math.min(99, zp)) + '%';
+    $('zState').textContent = zShow > 1.15 ? '比理想硬 — 擁擠' : zShow < 0.85 ? '比理想軟 — 聚集' : '接近理想';
+    const badge = $('flowBadge');
+    if ((piston.x <= PMIN + 1 || piston.x >= PMAX - 1) && Math.abs(dPi0) > 0.04) { badge.className = 'badge pin'; badge.textContent = '卡在擋板 — 漲停／跌停'; }
+    else if (piston.v > 8) { badge.className = 'badge up'; badge.textContent = '活塞向右滑 — 價錢上升'; }
+    else if (piston.v < -8) { badge.className = 'badge dn'; badge.textContent = '活塞向左滑 — 價錢下跌'; }
+    else { badge.className = 'badge eq'; badge.textContent = '活塞停穩 — 市場結清'; }
+    $('wD').textContent = (-dem.Q * dem.T * Math.log(dem.V / V0) / 100).toFixed(2);
+    $('wS').textContent = (-sup.Q * sup.T * Math.log(sup.V / V0) / 100).toFixed(2);
+  }
+  tickForecast(dt, dPi0);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ============ 供需曲線（氣體模型版） ============
+   沒有彈性係數，沒有事先假設的曲線。
+   對活塞的每一個位置 x：需求室體積 V_D(x)、供給室體積 V_S(x)
+   都由汽缸幾何決定；壓力用該室「現在量到的」Z、Q、T 套進
+   Π = Z·Q·T／V 算出來（T 固定，所以這是等溫線）。
+   需求線隨 x 遞減，供給線隨 x 遞增；交叉點 ⟺ ΔΠ = 0，即結清點。 */
+const curves = document.getElementById('curves');
+const vctx = curves.getContext('2d');
+function chamberV(side, x) {
+  const W = side === 'D' ? (x - PISTON_HW - XL) : (XR - (x + PISTON_HW));
+  return W * (Y1 - Y0) / 100;
+}
+function curvePi(Z, Q, T, V) { return Z * Q * T / V; }
+function drawCurves() {
+  const W = curves.width, H = curves.height, PL = 56, PR = 16, PT = 18, PB = 34;
+  vctx.clearRect(0, 0, W, H);
+  vctx.fillStyle = '#0d2233'; vctx.fillRect(0, 0, W, H);
+  const N = 120, xs = [], pD = [], pS = [];
+  for (let i = 0; i <= N; i++) {
+    const x = PMIN + (PMAX - PMIN) * i / N;
+    xs.push(x);
+    pD.push(curvePi(dem.Z, dem.Q, dem.T, chamberV('D', x)));
+    pS.push(curvePi(sup.Z, sup.Q, sup.T, chamberV('S', x)));
+  }
+  let mx = 0; for (const v of pD.concat(pS)) if (v > mx) mx = v;
+  mx *= 1.12;
+  const X = x => PL + (x - PMIN) / (PMAX - PMIN) * (W - PL - PR);
+  const Y = p => PT + (1 - p / mx) * (H - PT - PB);
+  vctx.strokeStyle = '#2a4356'; vctx.lineWidth = 1;
+  for (let g = 0; g <= 4; g++) {
+    const y = PT + (H - PT - PB) * g / 4;
+    vctx.beginPath(); vctx.moveTo(PL, y); vctx.lineTo(W - PR, y); vctx.stroke();
+    vctx.fillStyle = '#9fb6c6'; vctx.font = '11px sans-serif'; vctx.textAlign = 'right';
+    vctx.fillText((mx * (1 - g / 4)).toFixed(2), PL - 6, y + 4);
+  }
+  vctx.fillStyle = '#9fb6c6'; vctx.font = '12px sans-serif'; vctx.textAlign = 'center';
+  vctx.fillText('活塞位置（左 → 需求被擠壓，右 → 供給被擠壓）', (W + PL) / 2, H - 8);
+  vctx.save(); vctx.translate(14, H / 2); vctx.rotate(-Math.PI / 2);
+  vctx.fillText('壓力 Π', 0, 0); vctx.restore();
+  function plot(arr, color) {
+    vctx.strokeStyle = color; vctx.lineWidth = 2.5; vctx.beginPath();
+    arr.forEach((p, i) => { const px = X(xs[i]), py = Y(p); i ? vctx.lineTo(px, py) : vctx.moveTo(px, py); });
+    vctx.stroke();
+  }
+  plot(pD, '#7fc4ff'); plot(pS, '#ffb08a');
+  // 交叉點：ΔΠ 變號處（線性內插）
+  let cross = null;
+  for (let i = 1; i <= N; i++) {
+    const d0 = pD[i - 1] - pS[i - 1], d1 = pD[i] - pS[i];
+    if (d0 === 0) { cross = xs[i - 1]; break; }
+    if (d0 * d1 < 0) { cross = xs[i - 1] + (xs[i] - xs[i - 1]) * d0 / (d0 - d1); break; }
+  }
+  if (cross !== null) {
+    const pc = curvePi(dem.Z, dem.Q, dem.T, chamberV('D', cross));
+    vctx.fillStyle = '#ffffff'; vctx.beginPath(); vctx.arc(X(cross), Y(pc), 6, 0, 7); vctx.fill();
+    vctx.fillStyle = '#ffffff'; vctx.font = 'bold 13px sans-serif'; vctx.textAlign = 'left';
+    vctx.fillText('結清點', Math.min(X(cross) + 10, W - 90), Math.max(Y(pc) - 10, PT + 12));
+  }
+  // 公平價值錨（金色虛線）
+  vctx.strokeStyle = '#d4a017'; vctx.setLineDash([6, 5]); vctx.beginPath();
+  vctx.moveTo(X(X0), PT); vctx.lineTo(X(X0), H - PB); vctx.stroke(); vctx.setLineDash([]);
+  // 現在活塞（白線）
+  vctx.strokeStyle = '#ffffff'; vctx.lineWidth = 2; vctx.beginPath();
+  vctx.moveTo(X(piston.x), PT); vctx.lineTo(X(piston.x), H - PB); vctx.stroke();
+  // 圖例
+  vctx.font = '12.5px sans-serif'; vctx.textAlign = 'left';
+  vctx.fillStyle = '#7fc4ff'; vctx.fillText('— 需求曲線 Π_D', PL + 8, PT + 14);
+  vctx.fillStyle = '#ffb08a'; vctx.fillText('— 供給曲線 Π_S', PL + 150, PT + 14);
+  vctx.fillStyle = '#ffffff'; vctx.fillText('白線 = 現在活塞', PL + 300, PT + 14);
+  vctx.fillStyle = '#d4a017'; vctx.fillText('金虛線 = 公平價值', PL + 430, PT + 14);
+  // 說明列
+  const note = $('curvesNote');
+  if (note) {
+    const pxNow = sim.fair * Math.exp((piston.x - X0) / LAMBDA);
+    if (cross !== null) {
+      const pxEq = sim.fair * Math.exp((cross - X0) / LAMBDA);
+      note.textContent = '結清點：活塞位置 ' + Math.round(cross - X0) + ' px，對應價錢 $' + pxEq.toFixed(2)
+        + '；現在活塞 ' + Math.round(piston.x - X0) + ' px，價錢 $' + pxNow.toFixed(2)
+        + '。活塞會往結清點滑過去。';
+    } else {
+      note.textContent = '兩條線在活塞範圍內沒有交叉 — 活塞會滑到擋板（漲停／跌停）。現在價錢 $' + pxNow.toFixed(2) + '。';
+    }
+  }
+}
+
+</script>
+</body>
+</html>

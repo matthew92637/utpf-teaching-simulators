@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phillips Curve Gas Lab — 菲利浦曲線氣體實驗室</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; max-width: 900px;
+         margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.45; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 19px; margin: 22px 0 6px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  .sub { color: #555; margin-top: 0; }
+  .box { background: #f6f8fb; border: 1px solid #ccd6e0; border-radius: 8px;
+         padding: 12px 16px; margin: 12px 0; }
+  .controls label { display: block; margin: 8px 0 2px; font-weight: bold; }
+  .controls input[type=range] { width: 100%; }
+  .val { color: #0b5fa5; font-weight: bold; }
+  button { font-size: 15px; padding: 7px 14px; margin: 4px 6px 4px 0;
+           border-radius: 6px; border: 1px solid #888; background: #fff; cursor: pointer; }
+  button:hover { background: #eef4fb; }
+  button.scenario { background: #e8f1fb; border-color: #0b5fa5; }
+  button.test { background: #fdf3e3; border-color: #b56b00; }
+  .readouts { display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: 17px; }
+  .readouts b { font-size: 19px; }
+  canvas { border: 1px solid #999; border-radius: 6px; background: #fff;
+           max-width: 100%; display: block; margin: 8px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: center; }
+  th { background: #eef2f6; }
+  .small { font-size: 13.5px; color: #555; }
+  .limits { background: #fff8e6; border: 1px solid #d9b64f; }
+  #reading { font-size: 18px; font-weight: bold; color: #0b5fa5; }
+  code { background: #eef; padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>Phillips Curve Gas Lab</h1>
+<p class="sub">菲利浦曲線氣體實驗室 — the expectations-augmented Phillips curve,
+translated into the UTPF gas picture. Move the sliders or press a story
+button and watch the curve, the dot, and the gas piston move together.</p>
+
+<div class="box">
+<b>UTPF translation (a mapping to explore, not a measurement):</b>
+<table>
+<tr><th>Phillips curve</th><th>Gas (UTPF)</th><th>Meaning here</th></tr>
+<tr><td>Unemployment rate u</td><td>Idle gas (Q &minus; V) / Q</td><td>The share of the gas not doing work</td></tr>
+<tr><td>Inflation rate &pi;</td><td>Pressure &Pi; = 1 + &pi;/100</td><td>How hard prices push on the vessel wall</td></tr>
+<tr><td>Employment V = 100 &minus; u</td><td>Volume V</td><td>How much of the gas is working</td></tr>
+<tr><td>Labour force</td><td>Gas amount Q = 100</td><td>All the workers, per 100 people</td></tr>
+<tr><td>Expected inflation &pi;<sup>e</sup></td><td>Temperature T = 1 + &pi;<sup>e</sup>/100</td><td>How hot expectations run in everyone's head</td></tr>
+<tr><td>Supply shock v</td><td>Wind from outside</td><td>An oil shock blows the whole curve up</td></tr>
+<tr><td>—</td><td>Z = &Pi;V / (QT)</td><td>Computed from the mapping; near 1 is the calm baseline</td></tr>
+</table>
+<p class="small">When expectations catch up with inflation, the short-run curve
+shifts up and the economy returns to the natural rate of unemployment at
+a higher inflation rate — that is the long-run vertical curve. See the
+instructions file for the worked examples.</p>
+</div>
+
+<h2>Controls</h2>
+<div class="controls">
+<label>Demand heat (how hot the economy runs): <span class="val" id="dVal">50</span></label>
+<input type="range" id="dSlider" min="0" max="100" step="1" value="50">
+<label>Expected inflation &pi;<sup>e</sup> (temperature): <span class="val" id="peVal">2.0%</span></label>
+<input type="range" id="peSlider" min="0" max="8" step="0.5" value="2">
+<label>Natural rate of unemployment u<sub>n</sub>: <span class="val" id="unVal">4.5%</span></label>
+<input type="range" id="unSlider" min="3" max="6" step="0.5" value="4.5">
+<p class="small">Fixed in this lab: slope a = 0.6, labour force Q = 100,
+inflation &pi; = &pi;<sup>e</sup> &minus; 0.6&middot;(u &minus; u<sub>n</sub>)
++ supply shock v. Unemployment stays between 1% and 12% on this chart.</p>
+</div>
+
+<h2>Stories — press one</h2>
+<button class="scenario" id="btnNormal">Normal day</button>
+<button class="scenario" id="btnHot">Hot economy</button>
+<button class="scenario" id="btnRecession">Recession</button>
+<button class="scenario" id="btnStagflation">Stagflation — oil shock</button>
+<button id="btnReset">Reset to normal</button>
+<p>
+<button class="test" id="btnCool">Central bank raises rates</button>
+<button class="test" id="btnStimulate">Stimulus: heat demand +10</button>
+<button class="test" id="btnOil">Oil shock +3</button>
+<button class="test" id="btnCatchUp">Expectations catch up</button>
+<span class="small">Try this chain: Hot economy &rarr; Expectations catch up
+&rarr; Raises rates. Watch the dot climb, then walk back to the
+natural rate at a higher inflation.</span>
+</p>
+
+<h2>Where we are now</h2>
+<div class="readouts">
+<span>Unemployment u = <b id="uNow">—</b></span>
+<span>Inflation &pi; = <b id="piNow">—</b></span>
+<span>Expected &pi;<sup>e</sup> = <b id="peNow">—</b></span>
+<span>Natural u<sub>n</sub> = <b id="unNow">—</b></span>
+<span>Supply shock v = <b id="vNow">—</b></span>
+<span>Z = <b id="zNow">—</b></span>
+</div>
+<p id="reading"></p>
+
+<h2>Phillips curve diagram</h2>
+<canvas id="phillipsCanvas" width="640" height="420"></canvas>
+<p class="small">Blue line = short-run Phillips curve (for today's expectations).
+Grey dashed line = long-run Phillips curve, vertical at the natural rate.
+Red dot = where the economy is now. Watch the dot travel when you press
+a story button.</p>
+
+<h2>Gas piston</h2>
+<canvas id="gasCanvas" width="640" height="220"></canvas>
+<div class="readouts">
+<span>Pressure &Pi; = <b id="piVal">—</b></span>
+<span>Volume V = <b id="vVal">—</b></span>
+<span>Gas Q = <b id="qVal">—</b></span>
+<span>Temperature T = <b id="tVal">—</b></span>
+<span>Z = <b id="zVal">—</b></span>
+</div>
+<p class="small">Piston position is employment (V). Dots are the labour force (Q).
+Thermometer is expected inflation (T). Pressure is the inflation rate
+(&Pi; = 1 + &pi;/100).</p>
+
+<h2>Score table — what each story did</h2>
+<table id="scoreTable">
+<tr><th>Story</th><th>u before</th><th>u after</th><th>&pi; before</th>
+<th>&pi; after</th><th>Z after</th></tr>
+</table>
+<button id="btnClear">Clear table</button>
+
+<h2>How to use (short version)</h2>
+<ol>
+<li>Press <b>Normal day</b> first. Note u = 4.5% and &pi; = 2%.</li>
+<li>Press <b>Hot economy</b>: unemployment falls, inflation rises — the dot
+slides up the short-run curve.</li>
+<li>Press <b>Expectations catch up</b>: the whole curve shifts up and
+inflation rises again, even though unemployment is unchanged.</li>
+<li>Press <b>Central bank raises rates</b>: demand cools, unemployment walks
+back to the natural rate — but inflation stays high. That is the long run.</li>
+<li>Press <b>Stagflation</b>: unemployment is high AND inflation is high.
+The curve itself moved, not just the dot.</li>
+<li>Move the sliders by hand and watch the dot and the piston follow.</li>
+</ol>
+
+<div class="box limits">
+<b>Honest limits — read before believing anything:</b>
+<ul>
+<li>This is a teaching model, not a forecast. The expectations-augmented
+Phillips curve is a textbook simplification; real inflation also moves with
+productivity, global prices, and policy lags this lab leaves out.</li>
+<li>The gas numbers are a <i>translation</i> of the Phillips numbers, not a
+measurement of a real market. Z here is computed from the mapping
+(Z = &Pi;V/(QT)); it is a way to see the model, not a law of nature. The
+operational definition of T is still being pinned down in the UTPF work.</li>
+<li>Nothing here is investment advice. Do not buy or sell anything from
+these numbers.</li>
+</ul>
+</div>
+
+<script>
+"use strict";
+function $(id) { return document.getElementById(id); }
+
+// ---- Fixed parameters (textbook expectations-augmented Phillips curve) ----
+var FIXED = { a: 0.6, Q: 100 };
+var state = { d: 50, pe: 2.0, un: 4.5, v: 0 };
+var last = null;   // last equilibrium {u, pi, Z} before the latest change
+
+// ---- Core model ----
+function compute(p) {
+  var u = p.un + (50 - p.d) / 10;
+  if (u < 1) { u = 1; }
+  if (u > 12) { u = 12; }
+  var pi = p.pe - FIXED.a * (u - p.un) + p.v;
+  var Pi = 1 + pi / 100;
+  var V = 100 - u;
+  var T = 1 + p.pe / 100;
+  var Z = (T <= 0.2) ? null : (Pi * V) / (FIXED.Q * T);
+  return { u: u, pi: pi, Pi: Pi, V: V, Q: FIXED.Q, T: T, Z: Z };
+}
+function zText(z) { return (z === null) ? "— (T near 0)" : z.toFixed(2); }
+
+// ---- One-line reading of the current state ----
+function reading(eq) {
+  if (state.v >= 3 && eq.u > state.un + 0.5) {
+    return "Stagflation: unemployment is high AND inflation is high — both bad friends came together.";
+  }
+  if (eq.u < state.un - 0.5 && eq.pi > state.pe) {
+    return "Hot economy: plenty of jobs, wages rise, inflation follows.";
+  }
+  if (eq.u > state.un + 0.5 && eq.pi < 1) {
+    return "Cold economy: few jobs, inflation is very low.";
+  }
+  if (Math.abs(eq.u - state.un) <= 0.5) {
+    return "Near the natural rate: calm economy, inflation equals what people expected.";
+  }
+  return "Moving along the short-run curve: one side up, the other down.";
+}
+
+// ---- Read sliders into state ----
+function readSliders() {
+  state.d = parseFloat($("dSlider").value);
+  state.pe = parseFloat($("peSlider").value);
+  state.un = parseFloat($("unSlider").value);
+  $("dVal").textContent = state.d;
+  $("peVal").textContent = state.pe.toFixed(1) + "%";
+  $("unVal").textContent = state.un.toFixed(1) + "%";
+}
+
+// ---- Update everything (readouts + both canvases) ----
+var anim = null;
+function update(animate) {
+  readSliders();
+  var eq = compute(state);
+  var from = last || eq;
+  if (animate && typeof requestAnimationFrame !== "undefined") {
+    anim = { fromU: from.u, fromPi: from.pi, toU: eq.u, toPi: eq.pi, t0: null };
+    stepAnim(anim, eq);
+  } else {
+    last = eq;
+    render(eq, eq);
+  }
+  $("uNow").textContent = eq.u.toFixed(1) + "%";
+  $("piNow").textContent = eq.pi.toFixed(1) + "%";
+  $("peNow").textContent = state.pe.toFixed(1) + "%";
+  $("unNow").textContent = state.un.toFixed(1) + "%";
+  $("vNow").textContent = (state.v >= 0 ? "+" : "") + state.v.toFixed(1) + "%";
+  $("zNow").textContent = zText(eq.Z);
+  $("reading").textContent = reading(eq);
+  $("piVal").textContent = eq.Pi.toFixed(2);
+  $("vVal").textContent = eq.V.toFixed(1);
+  $("qVal").textContent = eq.Q;
+  $("tVal").textContent = eq.T.toFixed(2);
+  $("zVal").textContent = zText(eq.Z);
+}
+function stepAnim(a, eq) {
+  function frame(ts) {
+    if (a.t0 === null) { a.t0 = ts; }
+    var k = Math.min(1, (ts - a.t0) / 800);
+    var cur = { u: a.fromU + (a.toU - a.fromU) * k,
+                pi: a.fromPi + (a.toPi - a.fromPi) * k, Z: eq.Z,
+                Pi: eq.Pi, V: eq.V, Q: eq.Q, T: eq.T };
+    render(cur, eq);
+    if (k < 1) { requestAnimationFrame(frame); }
+    else { last = eq; render(eq, eq); }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- Scenario presets ----
+var SCENARIOS = {
+  "Normal day":       { d: 50, pe: 2.0, un: 4.5, v: 0 },
+  "Hot economy":      { d: 75, pe: 2.0, un: 4.5, v: 0 },
+  "Recession":        { d: 30, pe: 2.0, un: 4.5, v: 0 },
+  "Stagflation — oil shock": { d: 30, pe: 2.0, un: 4.5, v: 3 }
+};
+function syncSliders() {
+  $("dSlider").value = state.d;
+  $("peSlider").value = state.pe;
+  $("unSlider").value = state.un;
+}
+function applyScenario(name) {
+  var s = SCENARIOS[name];
+  var before = compute(state);
+  state.d = s.d; state.pe = s.pe; state.un = s.un; state.v = s.v;
+  syncSliders();
+  update(true);
+  logRow(name, before, compute(state));
+}
+function adjustDemand(delta, label) {
+  var before = compute(state);
+  state.d = Math.min(100, Math.max(0, state.d + delta));
+  syncSliders();
+  update(true);
+  logRow(label, before, compute(state));
+}
+function oilShock() {
+  var before = compute(state);
+  state.v = state.v + 3;
+  state.d = Math.max(0, state.d - 10);
+  syncSliders();
+  update(true);
+  logRow("Oil shock +3", before, compute(state));
+}
+function catchUp() {
+  var before = compute(state);
+  state.pe = Math.round(before.pi * 2) / 2;
+  if (state.pe < 0) { state.pe = 0; }
+  if (state.pe > 8) { state.pe = 8; }
+  syncSliders();
+  update(true);
+  logRow("Expectations catch up", before, compute(state));
+}
+function logRow(name, before, after) {
+  var t = $("scoreTable");
+  var tr = document.createElement("tr");
+  var cells = [name, before.u.toFixed(1) + "%", after.u.toFixed(1) + "%",
+    before.pi.toFixed(1) + "%", after.pi.toFixed(1) + "%", zText(after.Z)];
+  for (var i = 0; i < cells.length; i++) {
+    var td = document.createElement("td");
+    td.textContent = cells[i];
+    tr.appendChild(td);
+  }
+  t.appendChild(tr);
+}
+
+// ---- Drawing: Phillips curve diagram ----
+var UMAX = 12, PIMIN = -2, PIMAX = 10;
+function drawPhillips(cur, eq) {
+  var cv = $("phillipsCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height, L = 56, B = 40, T = 16, R = 16;
+  function X(u) { return L + (u / UMAX) * (W - L - R); }
+  function Yp(pi) { return H - B - ((pi - PIMIN) / (PIMAX - PIMIN)) * (H - T - B); }
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#ccc"; ctx.fillStyle = "#333";
+  ctx.font = "13px Georgia";
+  for (var g = 0; g <= 12; g += 2) {
+    ctx.beginPath(); ctx.moveTo(X(g), H - B); ctx.lineTo(X(g), T); ctx.stroke();
+    ctx.fillText(g + "%", X(g) - 10, H - B + 18);
+  }
+  for (var pp = -2; pp <= 10; pp += 2) {
+    ctx.beginPath(); ctx.moveTo(L, Yp(pp)); ctx.lineTo(W - R, Yp(pp)); ctx.stroke();
+    ctx.fillText(pp + "%", 8, Yp(pp) + 4);
+  }
+  ctx.fillText("Unemployment u →", W - 130, H - 8);
+  ctx.fillText("Inflation π", 4, 12);
+  // short-run curve: pi(u) = pe + v - a*(u - un)
+  ctx.strokeStyle = "#0b5fa5"; ctx.lineWidth = 2.5; ctx.beginPath();
+  var started = false;
+  for (var u = 0; u <= UMAX; u += 0.25) {
+    var pi = state.pe + state.v - FIXED.a * (u - state.un);
+    if (pi < PIMIN || pi > PIMAX) { started = false; continue; }
+    if (!started) { ctx.moveTo(X(u), Yp(pi)); started = true; }
+    else { ctx.lineTo(X(u), Yp(pi)); }
+  }
+  ctx.stroke(); ctx.lineWidth = 1;
+  ctx.fillStyle = "#0b5fa5"; ctx.font = "bold 15px Georgia";
+  ctx.fillText("SRPC", X(1), Yp(state.pe + state.v - FIXED.a * (1 - state.un)) - 8);
+  // long-run curve: vertical at u_n
+  ctx.strokeStyle = "#888"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(state.un), Yp(PIMIN)); ctx.lineTo(X(state.un), Yp(PIMAX)); ctx.stroke();
+  ctx.setLineDash([]); ctx.lineWidth = 1;
+  ctx.fillStyle = "#888"; ctx.font = "bold 15px Georgia";
+  ctx.fillText("LRPC", X(state.un) + 8, T + 14);
+  ctx.font = "13px Georgia";
+  // current dot + dashed guides
+  var ex = X(cur.u), ey = Yp(Math.max(PIMIN, Math.min(PIMAX, cur.pi)));
+  ctx.strokeStyle = "#c00"; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, H - B); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(L, ey); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#c00";
+  ctx.beginPath(); ctx.arc(ex, ey, 6, 0, 2 * Math.PI); ctx.fill();
+  ctx.font = "bold 14px Georgia";
+  ctx.fillText("u=" + cur.u.toFixed(1) + "%  π=" + cur.pi.toFixed(1) + "%",
+    Math.min(ex + 10, W - 190), Math.max(ey - 12, 16));
+}
+
+// ---- Drawing: gas piston ----
+function drawGas(eq) {
+  var cv = $("gasCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+  ctx.strokeRect(20, 30, W - 40, 130);
+  // piston position from employment V (88..100 -> x 60..W-90)
+  var px = 60 + ((eq.V - 88) / 12) * (W - 150);
+  ctx.fillStyle = "#0b5fa5";
+  ctx.fillRect(px, 30, 10, 130);
+  // labour-force dots: one dot per 5 workers, capped at 40
+  var n = Math.min(40, Math.round(eq.Q / 5));
+  ctx.fillStyle = "#d97b00";
+  for (var i = 0; i < n; i++) {
+    var dx = 30 + ((i * 53) % Math.max(10, (px - 40)));
+    var dy = 45 + ((i * 37) % 100);
+    ctx.beginPath(); ctx.arc(dx, dy, 4, 0, 2 * Math.PI); ctx.fill();
+  }
+  // thermometer for expected inflation (0..8% -> height)
+  var th = 20 + (state.pe / 8) * 110;
+  ctx.fillStyle = "#c00";
+  ctx.fillRect(W - 52, 160 - th, 16, th);
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 1;
+  ctx.strokeRect(W - 52, 30, 16, 130);
+  ctx.fillStyle = "#333"; ctx.font = "13px Georgia";
+  ctx.fillText("piston = employment V", 24, 185);
+  ctx.fillText("dots = labour force Q", 24, 205);
+  ctx.fillText("thermometer = T (π^e)", W - 190, 185);
+  ctx.fillText("pressure Π = 1 + π/100", W - 200, 205);
+}
+
+function render(cur, eq) {
+  drawPhillips(cur, eq);
+  drawGas(eq);
+}
+
+// ---- Wiring ----
+["dSlider", "peSlider", "unSlider"].forEach(function (id) {
+  $(id).addEventListener("input", function () { update(false); });
+});
+$("btnNormal").addEventListener("click", function () { applyScenario("Normal day"); });
+$("btnHot").addEventListener("click", function () { applyScenario("Hot economy"); });
+$("btnRecession").addEventListener("click", function () { applyScenario("Recession"); });
+$("btnStagflation").addEventListener("click", function () { applyScenario("Stagflation — oil shock"); });
+$("btnReset").addEventListener("click", function () { applyScenario("Normal day"); });
+$("btnCool").addEventListener("click", function () { adjustDemand(-10, "Central bank raises rates"); });
+$("btnStimulate").addEventListener("click", function () { adjustDemand(10, "Stimulus: heat demand +10"); });
+$("btnOil").addEventListener("click", function () { oilShock(); });
+$("btnCatchUp").addEventListener("click", function () { catchUp(); });
+$("btnClear").addEventListener("click", function () {
+  var t = $("scoreTable");
+  while (t.rows.length > 1) { t.deleteRow(1); }
+});
+
+// ---- Expose model for testing (same pattern as the IS-LM sim) ----
+window.__phillips = { compute: compute, state: state, scenarios: SCENARIOS,
+  applyScenario: applyScenario, adjustDemand: adjustDemand,
+  oilShock: oilShock, catchUp: catchUp, FIXED: FIXED };
+
+update(false);
+last = compute(state);
+</script>
+</body>
+</html>

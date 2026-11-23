@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IS-LM Gas Lab — IS-LM 氣體實驗室</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; max-width: 900px;
+         margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.45; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 19px; margin: 22px 0 6px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  .sub { color: #555; margin-top: 0; }
+  .box { background: #f6f8fb; border: 1px solid #ccd6e0; border-radius: 8px;
+         padding: 12px 16px; margin: 12px 0; }
+  .controls label { display: block; margin: 8px 0 2px; font-weight: bold; }
+  .controls input[type=range] { width: 100%; }
+  .val { color: #0b5fa5; font-weight: bold; }
+  button { font-size: 15px; padding: 7px 14px; margin: 4px 6px 4px 0;
+           border-radius: 6px; border: 1px solid #888; background: #fff; cursor: pointer; }
+  button:hover { background: #eef4fb; }
+  button.scenario { background: #e8f1fb; border-color: #0b5fa5; }
+  button.test { background: #fdf3e3; border-color: #b56b00; }
+  .readouts { display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: 17px; }
+  .readouts b { font-size: 19px; }
+  canvas { border: 1px solid #999; border-radius: 6px; background: #fff;
+           max-width: 100%; display: block; margin: 8px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: center; }
+  th { background: #eef2f6; }
+  .trap-on { color: #b00000; font-weight: bold; }
+  .small { font-size: 13.5px; color: #555; }
+  .limits { background: #fff8e6; border: 1px solid #d9b64f; }
+  code { background: #eef; padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>IS-LM Gas Lab</h1>
+<p class="sub">IS-LM 氣體實驗室 — the Keynesian IS-LM model, translated into the
+UTPF gas picture. Move the sliders or press a story button and watch the
+two curves, the equilibrium dot, and the gas piston move together.</p>
+
+<div class="box">
+<b>UTPF translation (a mapping to explore, not a measurement):</b>
+<table>
+<tr><th>IS-LM</th><th>Gas (UTPF)</th><th>Meaning here</th></tr>
+<tr><td>Output Y</td><td>Volume V</td><td>How big the market container is</td></tr>
+<tr><td>Price level P (fixed, short run)</td><td>Pressure &Pi;</td><td>Stays at 1.00 — prices do not move in this short-run picture</td></tr>
+<tr><td>Money supply M</td><td>Gas amount Q</td><td>How many money particles are in the vessel</td></tr>
+<tr><td>Interest rate r</td><td>Temperature T</td><td>How hot the market runs (book mapping: r is temperature)</td></tr>
+<tr><td>—</td><td>Z = &Pi;V / (QT)</td><td>Computed from the mapping; near 1 is the calm baseline</td></tr>
+<tr><td>Animal spirits (confidence)</td><td>Heater setting</td><td>Shifts investment: hopeful moods push the IS curve right</td></tr>
+</table>
+<p class="small">When r hits 0 the temperature hits absolute zero and Z cannot be
+computed — that is the liquidity trap, and it is a real feature of the
+model, not a bug. See the instructions file for the worked examples.</p>
+</div>
+
+<h2>Controls</h2>
+<div class="controls">
+<label>Government spending G: <span class="val" id="gVal">40</span></label>
+<input type="range" id="gSlider" min="0" max="100" step="1" value="40">
+<label>Money supply M: <span class="val" id="mVal">100</span></label>
+<input type="range" id="mSlider" min="50" max="200" step="1" value="100">
+<label>Market confidence (animal spirits): <span class="val" id="confVal">1.00</span></label>
+<input type="range" id="confSlider" min="0.5" max="1.5" step="0.05" value="1">
+<label>Investment sensitivity to r (d): <span class="val" id="dVal">10</span></label>
+<input type="range" id="dSlider" min="5" max="20" step="1" value="10">
+<label>Money-demand sensitivity to r (h): <span class="val" id="hVal">10</span>
+<span id="trapFlag"></span></label>
+<input type="range" id="hSlider" min="5" max="50" step="1" value="10">
+<p class="small">Fixed in this lab: price level P = 1.00, taxes = 20, MPC = 0.8,
+autonomous consumption = 20, autonomous investment = 30, money-demand
+sensitivity to income k = 0.5. Interest rate cannot go below 0%.</p>
+</div>
+
+<h2>Stories — press one</h2>
+<button class="scenario" id="btnNormal">Normal day</button>
+<button class="scenario" id="btnRecession">Recession — confidence falls</button>
+<button class="scenario" id="btnStimulus">Government stimulus</button>
+<button class="scenario" id="btnPrint">Central bank prints money</button>
+<button class="scenario" id="btnTrap">Liquidity trap</button>
+<button id="btnReset">Reset to normal</button>
+<p>
+<button class="test" id="btnPrintMore">Trap test: print +$50</button>
+<button class="test" id="btnSpendMore">Trap test: spend +$20</button>
+<span class="small">Use these two inside the trap: printing should do almost
+nothing, spending should move output a lot.</span>
+</p>
+
+<h2>Equilibrium now</h2>
+<div class="readouts">
+<span>Output Y* = <b id="yStar">—</b></span>
+<span>Interest rate r* = <b id="rStar">—</b></span>
+<span id="trapNote"></span>
+</div>
+
+<h2>IS-LM diagram</h2>
+<canvas id="islmCanvas" width="640" height="420"></canvas>
+<p class="small">Blue line = IS (goods market clears). Orange line = LM (money
+market clears). Red dot = both clear at once. Watch the dot travel when
+you press a story button.</p>
+
+<h2>Gas piston</h2>
+<canvas id="gasCanvas" width="640" height="220"></canvas>
+<div class="readouts">
+<span>Pressure &Pi; = <b id="piVal">1.00</b></span>
+<span>Volume V = <b id="vVal">—</b></span>
+<span>Gas Q = <b id="qVal">—</b></span>
+<span>Temperature T = <b id="tVal">—</b></span>
+<span>Z = <b id="zVal">—</b></span>
+</div>
+<p class="small">Piston position is output (V). Dots are money particles (Q).
+Thermometer is the interest rate (T). Pressure stays at 1.00 because the
+price level is fixed in this short-run model.</p>
+
+<h2>Score table — what each story did</h2>
+<table id="scoreTable">
+<tr><th>Story</th><th>Y before</th><th>Y after</th><th>r before</th>
+<th>r after</th><th>Z after</th></tr>
+</table>
+<button id="btnClear">Clear table</button>
+
+<h2>How to use (short version)</h2>
+<ol>
+<li>Press <b>Normal day</b> first. Note Y* and r*.</li>
+<li>Press <b>Recession</b>: confidence falls, IS shifts left, Y and r fall.</li>
+<li>Press <b>Government stimulus</b>: IS shifts right, Y rises — and r rises too.</li>
+<li>Press <b>Central bank prints money</b>: LM shifts right, r falls, Y rises.</li>
+<li>Press <b>Liquidity trap</b>: r is stuck at 0. Then press <b>print +$50</b>
+— almost nothing happens. Then press <b>spend +$20</b> — output jumps.
+That is the Keynesian lesson in one minute.</li>
+<li>Move the sliders by hand and watch the dot and the piston follow.</li>
+</ol>
+
+<div class="box limits">
+<b>Honest limits — read before believing anything:</b>
+<ul>
+<li>This is a teaching model, not a forecast. Short run only; the price
+level is fixed, the economy is closed, and the lines are straight on purpose.</li>
+<li>The gas numbers are a <i>translation</i> of the IS-LM numbers, not a
+measurement of a real market. Z here is computed from the mapping
+(Z = &Pi;V/(QT)); it is a way to see the model, not a law of nature.</li>
+<li>Nothing here is investment advice. Do not buy or sell anything from
+these numbers.</li>
+</ul>
+</div>
+
+<script>
+"use strict";
+function $(id) { return document.getElementById(id); }
+
+// ---- Fixed parameters (textbook linear IS-LM) ----
+var FIXED = { c: 0.8, C0: 20, I0: 30, Tx: 20, P: 1.0, k: 0.5 };
+var state = { G: 40, M: 100, conf: 1.0, d: 10, h: 10, trap: false };
+var last = null;   // last equilibrium {Y, r, Z} before the latest change
+
+// ---- Core model: closed-form equilibrium with a zero lower bound ----
+function compute(p) {
+  var A = FIXED.C0 - FIXED.c * FIXED.Tx + FIXED.I0 * p.conf + p.G;
+  var h = p.trap ? 1000 : p.h;
+  var den = (1 - FIXED.c) + p.d * FIXED.k / h;
+  var Y = (A + (p.d / h) * (p.M / FIXED.P)) / den;
+  var r = (FIXED.k * Y - p.M / FIXED.P) / h;
+  if (r < 0) { r = 0; Y = A / (1 - FIXED.c); }
+  var Z = null;
+  if (r >= 0.2) { Z = (FIXED.P * Y) / (p.M * r); }
+  return { Y: Y, r: r, Z: Z, A: A, h: h };
+}
+function zText(z) { return (z === null) ? "— (T near 0)" : z.toFixed(2); }
+
+// ---- Curves (for drawing) ----
+function isR(Y, p) {
+  var A = FIXED.C0 - FIXED.c * FIXED.Tx + FIXED.I0 * p.conf + p.G;
+  return (A - (1 - FIXED.c) * Y) / p.d;
+}
+function lmR(Y, p) {
+  var h = p.trap ? 1000 : p.h;
+  return (FIXED.k * Y - p.M / FIXED.P) / h;
+}
+
+// ---- Read sliders into state ----
+function readSliders() {
+  state.G = parseFloat($("gSlider").value);
+  state.M = parseFloat($("mSlider").value);
+  state.conf = parseFloat($("confSlider").value);
+  state.d = parseFloat($("dSlider").value);
+  if (!state.trap) { state.h = parseFloat($("hSlider").value); }
+  $("gVal").textContent = state.G;
+  $("mVal").textContent = state.M;
+  $("confVal").textContent = state.conf.toFixed(2);
+  $("dVal").textContent = state.d;
+  $("hVal").textContent = state.trap ? "1000 (trap)" : state.h;
+  $("hSlider").disabled = state.trap;
+  $("trapFlag").textContent = state.trap ? " — TRAP MODE" : "";
+  $("trapFlag").className = state.trap ? "trap-on" : "";
+}
+
+// ---- Update everything (readouts + both canvases) ----
+var anim = null;   // {fromY, fromR, toY, toR, t0} or null
+function update(animate) {
+  readSliders();
+  var eq = compute(state);
+  var from = last || eq;
+  if (animate && typeof requestAnimationFrame !== "undefined") {
+    anim = { fromY: from.Y, fromR: from.r, toY: eq.Y, toR: eq.r, t0: null };
+    stepAnim(anim, eq);
+  } else {
+    last = eq;
+    render(eq, eq);
+  }
+  $("yStar").textContent = eq.Y.toFixed(1);
+  $("rStar").textContent = eq.r.toFixed(2) + "%";
+  $("trapNote").textContent = (eq.r === 0)
+    ? " — r is at zero: liquidity trap, money alone cannot move output"
+    : "";
+  $("piVal").textContent = FIXED.P.toFixed(2);
+  $("vVal").textContent = eq.Y.toFixed(1);
+  $("qVal").textContent = state.M;
+  $("tVal").textContent = eq.r.toFixed(2) + "%";
+  $("zVal").textContent = zText(eq.Z);
+}
+function stepAnim(a, eq) {
+  function frame(ts) {
+    if (a.t0 === null) { a.t0 = ts; }
+    var k = Math.min(1, (ts - a.t0) / 800);
+    var cur = { Y: a.fromY + (a.toY - a.fromY) * k,
+                r: a.fromR + (a.toR - a.fromR) * k, Z: eq.Z };
+    render(cur, eq);
+    if (k < 1) { requestAnimationFrame(frame); }
+    else { last = eq; render(eq, eq); }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- Scenario presets ----
+var SCENARIOS = {
+  "Normal day":               { G: 40, M: 100, conf: 1.0, d: 10, h: 10, trap: false },
+  "Recession — confidence falls": { G: 40, M: 100, conf: 0.6, d: 10, h: 10, trap: false },
+  "Government stimulus":      { G: 60, M: 100, conf: 1.0, d: 10, h: 10, trap: false },
+  "Central bank prints money": { G: 40, M: 150, conf: 1.0, d: 10, h: 10, trap: false },
+  "Liquidity trap":           { G: 20, M: 100, conf: 0.5, d: 10, h: 1000, trap: true }
+};
+function applyScenario(name) {
+  var s = SCENARIOS[name];
+  var before = compute(state);
+  state.G = s.G; state.M = s.M; state.conf = s.conf;
+  state.d = s.d; state.trap = s.trap;
+  if (!s.trap) { state.h = s.h; }
+  $("gSlider").value = s.G; $("mSlider").value = s.M;
+  $("confSlider").value = s.conf; $("dSlider").value = s.d;
+  if (!s.trap) { $("hSlider").value = s.h; }
+  update(true);
+  var after = compute(state);
+  logRow(name, before, after);
+}
+function bump(which, delta, label) {
+  var before = compute(state);
+  if (which === "M") {
+    state.M = Math.min(200, Math.max(50, state.M + delta));
+    $("mSlider").value = state.M;
+  } else {
+    state.G = Math.min(100, Math.max(0, state.G + delta));
+    $("gSlider").value = state.G;
+  }
+  update(true);
+  logRow(label, before, compute(state));
+}
+function logRow(name, before, after) {
+  var t = $("scoreTable");
+  var tr = document.createElement("tr");
+  var cells = [name, before.Y.toFixed(1), after.Y.toFixed(1),
+    before.r.toFixed(2) + "%", after.r.toFixed(2) + "%", zText(after.Z)];
+  for (var i = 0; i < cells.length; i++) {
+    var td = document.createElement("td");
+    td.textContent = cells[i];
+    tr.appendChild(td);
+  }
+  t.appendChild(tr);
+}
+
+// ---- Drawing: IS-LM diagram ----
+var YMAX = 500, RMAX = 10;
+function drawISLM(cur, eq) {
+  var cv = $("islmCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height, L = 56, B = 40, T = 16, R = 16;
+  function X(Y) { return L + (Y / YMAX) * (W - L - R); }
+  function Yp(r) { return H - B - (r / RMAX) * (H - T - B); }
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#ccc"; ctx.fillStyle = "#333";
+  ctx.font = "13px Georgia";
+  for (var g = 0; g <= 500; g += 100) {
+    ctx.beginPath(); ctx.moveTo(X(g), H - B); ctx.lineTo(X(g), T); ctx.stroke();
+    ctx.fillText(String(g), X(g) - 10, H - B + 18);
+  }
+  for (var rr = 0; rr <= 10; rr += 2) {
+    ctx.beginPath(); ctx.moveTo(L, Yp(rr)); ctx.lineTo(W - R, Yp(rr)); ctx.stroke();
+    ctx.fillText(rr + "%", 8, Yp(rr) + 4);
+  }
+  ctx.fillText("Output Y →", W - 110, H - 8);
+  ctx.fillText("Interest rate r", 4, 12);
+  function line(fn, color, label) {
+    ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+    var started = false;
+    for (var Y = 0; Y <= YMAX; Y += 5) {
+      var r = fn(Y, state);
+      if (r < 0 || r > RMAX) { started = false; continue; }
+      if (!started) { ctx.moveTo(X(Y), Yp(r)); started = true; }
+      else { ctx.lineTo(X(Y), Yp(r)); }
+    }
+    ctx.stroke(); ctx.lineWidth = 1;
+    ctx.fillStyle = color; ctx.font = "bold 15px Georgia";
+    ctx.fillText(label, W - 70, label === "IS" ? 30 : 52);
+    ctx.font = "13px Georgia";
+  }
+  line(isR, "#0b5fa5", "IS");
+  line(lmR, "#d97b00", "LM");
+  // equilibrium dot + dashed guides
+  var ex = X(cur.Y), ey = Yp(cur.r);
+  ctx.strokeStyle = "#c00"; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, H - B); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(L, ey); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#c00";
+  ctx.beginPath(); ctx.arc(ex, ey, 6, 0, 2 * Math.PI); ctx.fill();
+  ctx.font = "bold 14px Georgia";
+  ctx.fillText("Y*=" + cur.Y.toFixed(1) + "  r*=" + cur.r.toFixed(2) + "%",
+    Math.min(ex + 10, W - 170), Math.max(ey - 12, 16));
+}
+
+// ---- Drawing: gas piston ----
+function drawGas(eq) {
+  var cv = $("gasCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  // vessel
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+  ctx.strokeRect(20, 30, W - 40, 130);
+  // piston position from output Y (0..500 -> x 60..W-90)
+  var px = 60 + (eq.Y / YMAX) * (W - 150);
+  ctx.fillStyle = "#0b5fa5";
+  ctx.fillRect(px, 30, 10, 130);
+  // money dots: one dot per $5 of M, capped at 40
+  var n = Math.min(40, Math.round(state.M / 5));
+  ctx.fillStyle = "#d97b00";
+  for (var i = 0; i < n; i++) {
+    var dx = 30 + ((i * 53) % Math.max(10, (px - 40)));
+    var dy = 45 + ((i * 37) % 100);
+    ctx.beginPath(); ctx.arc(dx, dy, 4, 0, 2 * Math.PI); ctx.fill();
+  }
+  // thermometer for r (temperature)
+  var th = 20 + (eq.r / RMAX) * 110;
+  ctx.fillStyle = "#c00";
+  ctx.fillRect(W - 52, 160 - th, 16, th);
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 1;
+  ctx.strokeRect(W - 52, 30, 16, 130);
+  ctx.fillStyle = "#333"; ctx.font = "13px Georgia";
+  ctx.fillText("piston = output V (Y)", 24, 185);
+  ctx.fillText("dots = money Q (M)", 24, 205);
+  ctx.fillText("thermometer = T (r)", W - 170, 185);
+  ctx.fillText("pressure Π = 1.00 (fixed)", W - 210, 205);
+}
+
+function render(cur, eq) {
+  drawISLM(cur, eq);
+  drawGas(eq);
+}
+
+// ---- Wiring ----
+["gSlider", "mSlider", "confSlider", "dSlider", "hSlider"].forEach(function (id) {
+  $(id).addEventListener("input", function () { update(false); });
+});
+$("btnNormal").addEventListener("click", function () { applyScenario("Normal day"); });
+$("btnRecession").addEventListener("click", function () { applyScenario("Recession — confidence falls"); });
+$("btnStimulus").addEventListener("click", function () { applyScenario("Government stimulus"); });
+$("btnPrint").addEventListener("click", function () { applyScenario("Central bank prints money"); });
+$("btnTrap").addEventListener("click", function () { applyScenario("Liquidity trap"); });
+$("btnReset").addEventListener("click", function () { applyScenario("Normal day"); });
+$("btnPrintMore").addEventListener("click", function () { bump("M", 50, "Trap test: print +$50"); });
+$("btnSpendMore").addEventListener("click", function () { bump("G", 20, "Trap test: spend +$20"); });
+$("btnClear").addEventListener("click", function () {
+  var t = $("scoreTable");
+  while (t.rows.length > 1) { t.deleteRow(1); }
+});
+
+// ---- Expose model for testing (same pattern as the farmers-market sim) ----
+window.__islm = { compute: compute, state: state, scenarios: SCENARIOS,
+  applyScenario: applyScenario, bump: bump, FIXED: FIXED };
+
+update(false);
+last = compute(state);
+</script>
+</body>
+</html>

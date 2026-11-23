@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UTPF 農夫市場 — 氣體模型模擬器（小朋友版）</title>
+<style>
+  :root { --ink:#14324a; --teal:#1b8a7a; --gold:#d4a017; --line:#b9c9d4; --bg:#f4f8fa; --card:#ffffff;
+          --dem:#2277cc; --sup:#dd6633; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Noto Sans","Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 20px 6px; }
+  h1 { margin:0; font-size:21px; color:#0e3a56; }
+  .sub { color:#5a7186; font-size:13px; margin-top:2px; }
+  .wrap { display:flex; gap:14px; padding:10px 20px 20px; flex-wrap:wrap; }
+  .stage { flex:1 1 640px; min-width:340px; }
+  .panel { flex:0 1 330px; min-width:290px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .card h2 { margin:0 0 8px; font-size:14.5px; color:#0e3a56; }
+  canvas#stage { width:100%; background:#0d2233; border-radius:10px; display:block; }
+  canvas#chart { width:100%; background:#ffffff; border:1px solid var(--line); border-radius:10px; display:block; margin-top:10px; }
+  .ctl { margin:9px 0; }
+  .ctl label { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:2px; }
+  .ctl label b { color:#0e3a56; }
+  .ctl input[type=range] { width:100%; accent-color:var(--teal); }
+  .dem-h { color:var(--dem); } .sup-h { color:var(--sup); }
+  .btnrow { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
+  button { border:1px solid var(--teal); background:#e8f4f1; color:#0e3a56; border-radius:7px;
+           padding:6px 10px; font-size:12.5px; cursor:pointer; }
+  button:hover { background:#d3ebe5; }
+  button.warn { border-color:var(--gold); background:#fdf3d7; }
+  .read { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; font-size:12.8px; }
+  .read .k { color:#5a7186; } .read .v { font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+  .big { font-size:15px; }
+  .gauge { position:relative; height:26px; background:linear-gradient(90deg,#7db3e8 0%,#cfe8d8 38%,#eafaf1 50%,#fdeeda 62%,#f2a65e 100%);
+           border:1px solid var(--line); border-radius:6px; margin:6px 0 2px; }
+  .gauge .ideal { position:absolute; left:50%; top:-3px; bottom:-3px; width:2px; background:#0e3a56; }
+  .gauge .dot { position:absolute; top:50%; width:14px; height:14px; border-radius:50%; background:#0e3a56;
+                border:2px solid #fff; transform:translate(-50%,-50%); transition:left .3s; }
+  .gauge-lbl { display:flex; justify-content:space-between; font-size:11px; color:#5a7186; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-weight:700; font-size:13px; }
+  .badge.up { background:#fde3c8; color:#8a4a00; } .badge.dn { background:#d7e9fd; color:#0b4a8a; }
+  .badge.eq { background:#d9f2e4; color:#0d5c40; } .badge.pin { background:#f8d7d7; color:#8a1f1f; }
+  .formula { font-family:Georgia,serif; font-size:13.5px; line-height:1.75; }
+  .small { font-size:11.8px; color:#5a7186; line-height:1.5; }
+  .chk { font-size:12.8px; display:flex; gap:7px; align-items:center; margin:5px 0; }
+  .foot { padding:0 20px 18px; font-size:11.5px; color:#5a7186; }
+  .fmflow b { color:#0e3a56; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧑‍🌾 UTPF 農夫市場 — 氣體模型模擬器</h1>
+  <div class="sub">一個市場，兩個氣體房間 — 左邊是<b style="color:var(--dem)">需求室</b>（帶著錢幣的買菜人），右邊是<b style="color:var(--sup)">供給室</b>（帶著一箱箱貨的農夫），中間隔著一座會自己滑來滑去的<b>市場櫃台</b>。櫃台會滑到兩邊壓力一樣大的地方才停。<b>櫃台停在哪裡，哪裡就是價錢。</b>這裡不畫供需曲線，也不算彈性：市場遵守一條氣體的公式 <b>Π·V = Z·Q·T</b>，價錢怎麼來、缺貨、貨太多，全都從氣體自己跑出來。</div>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <canvas id="stage" width="960" height="440"></canvas>
+    <canvas id="chart" width="960" height="110"></canvas>
+    <div class="card" style="margin-top:10px">
+      <h2>怎麼看這個市場櫃台</h2>
+      <div class="small">
+        每一個小點點都是市場裡的一個人，像氣體的小粒子一樣跑來跑去：左邊藍色的是帶著錢幣的買菜人，右邊橘色的是帶著一箱箱貨的農夫。小點點跑得越快，那個房間就越<b>熱</b>（T = 大家有多想買、多想賣，心有多急）。
+        壓力 Π 是真的用小點點撞牆壁、撞櫃台的力氣<i>量</i>出來的 — 不是用猜的 — <b>Z = ΠV / (QT)</b> 是給每個房間打的分數，看它跟理想氣體像不像。
+        如果買菜人的壓力贏過農夫，櫃台就會往右滑：買菜人的房間變大，農夫被擠到，價錢（看上面的尺）就漲上去。
+        把一個房間擠小，裡面的壓力就會變大 — 這就是玻意耳定律 — 一直擠到兩邊一樣大為止。櫃台停下來的地方，就是市場平衡的地方，是用物理畫出來的。
+        成交就發生在櫃台上：看好，一箱貨往左飛，一枚錢往右飛，一個換一個。櫃台後面的金色彈簧是「習慣」— 大家記得的習慣價 — 會把市場慢慢拉回去。
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h2>市場現在的樣子</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span class="big">價錢 <b id="priceOut">$150.00</b></span>
+        <span class="badge eq" id="flowBadge">櫃台停好了</span>
+      </div>
+      <div class="read">
+        <span class="k">大家習慣的價錢</span><span class="v" id="eqOut">$150.00</span>
+        <span class="k">市場壓力 Π = ln(習慣價/現在價)</span><span class="v" id="piOut">0.000</span>
+        <span class="k">兩邊壓力差 ΔΠ（需求 − 供給）</span><span class="v" id="dpiOut">0.000</span>
+        <span class="k">櫃台的位置</span><span class="v" id="posOut">centre</span>
+        <span class="k">市場熱鬧的程度</span><span class="v" id="tradesOut">0</span>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:#5a7186">整個市場的 Z（兩個房間合起來）</div>
+      <div class="gauge"><div class="ideal"></div><div class="dot" id="zDot" style="left:50%"></div></div>
+      <div class="gauge-lbl"><span>Z = 0.4 · 軟（黏在一起）</span><span><b>Z = 1 最理想</b></span><span>Z = 2.2 · 擠（人擠人）</span></div>
+      <div class="read" style="margin-top:6px">
+        <span class="k">市場的 Z</span><span class="v big" id="zOut">1.00</span>
+        <span class="k">狀態</span><span class="v" id="zState">Near ideal</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dem-h">● 需求 — 買菜的人</span> <span style="float:right" class="sup-h">農夫 — 供給 ●</span></h2>
+      <div class="read">
+        <span class="k">需求壓力 Π</span><span class="v" id="piD">0.00</span>
+        <span class="k">供給壓力 Π</span><span class="v" id="piS">0.00</span>
+        <span class="k">需求的 Z</span><span class="v" id="zD">1.00</span>
+        <span class="k">供給的 Z</span><span class="v" id="zS">1.00</span>
+        <span class="k">需求的房間大小 V</span><span class="v" id="vD">100%</span>
+        <span class="k">供給的房間大小 V</span><span class="v" id="vS">100%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>控制 — 需求（買菜的人）</h2>
+      <div class="ctl"><label>溫度 T<sub>D</sub> — 買菜的人有多想買 <b id="tDVal">0.95</b></label>
+        <input type="range" id="tD" min="0.15" max="3.2" step="0.05" value="0.95"></div>
+      <div class="ctl"><label>人數 Q<sub>D</sub> — 來買菜的人 <b id="qDVal">80</b></label>
+        <input type="range" id="qD" min="20" max="150" step="1" value="80"></div>
+      <h2 style="margin-top:14px">控制 — 供給（農夫）</h2>
+      <div class="ctl"><label>溫度 T<sub>S</sub> — 農夫有多想賣 <b id="tSVal">0.95</b></label>
+        <input type="range" id="tS" min="0.15" max="3.2" step="0.05" value="0.95"></div>
+      <div class="ctl"><label>人數 Q<sub>S</sub> — 來賣菜的農夫 <b id="qSVal">80</b></label>
+        <input type="range" id="qS" min="20" max="150" step="1" value="80"></div>
+      <div class="ctl"><label>大家習慣的價錢 <b id="eqVal">$150</b></label>
+        <input type="range" id="eq" min="40" max="400" step="5" value="150"></div>
+      <label class="chk"><input type="checkbox" id="anchor" checked> 習慣價小彈簧（關掉 = 櫃台完全自由：只會停在 Π<sub>D</sub> = Π<sub>S</sub> 的地方，會自己漂來漂去）</label>
+      <label class="chk"><input type="checkbox" id="interact" checked> 真實市場的小動作（關掉 = 理想氣體，Z 一直 ≈ 1）</label>
+      <div class="small">開著的時候：小點點有大小（擠在一起會把 Z 推到 1 以上），冷的時候會被人群拉回去（大家跟著別人擠，Z 會掉到 1 以下）。這裡沒有 V 的滑桿 — 每一邊的房間大小，是櫃台留給它的。房間是用壓力爭來的，不是用分的。這就是櫃台的意思。</div>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="shoveR">推櫃台 → 擠農夫那邊</button>
+        <button id="shoveL">← 推櫃台，擠買菜的人那邊</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>市場的日子</h2>
+      <div class="btnrow">
+        <button data-scn="open">市場開門</button>
+        <button data-scn="sunny">晴天星期六</button>
+        <button class="warn" data-scn="festival">節慶日</button>
+        <button data-scn="rainy">下雨天</button>
+        <button class="warn" data-scn="glut">豐收（貨太多）</button>
+        <button class="warn" data-scn="drought">乾旱年</button>
+      </div>
+      <h2 style="margin-top:10px">今天賣什麼 — 選一樣</h2>
+      <div class="btnrow">
+        <button data-pro="apples">🍎 蘋果 $3</button>
+        <button data-pro="tomatoes">🍅 番茄 $4.50</button>
+        <button data-pro="eggs">🥚 雞蛋 $5</button>
+        <button data-pro="flowers">💐 鮮花 $6</button>
+        <button data-pro="honey">🍯 蜂蜜 $8</button>
+        <button data-pro="cheese">🧀 起司 $9</button>
+      </div>
+      <div class="btnrow">
+        <button id="restockBtn">🚚 貨車來了 — 補貨</button>
+        <button id="newDayBtn">新的一天</button>
+        <button id="resetBtn">櫃台和價錢重新來</button>
+      </div>
+    </div>
+
+    <div class="card fmflow">
+      <h2>貨和錢 — 兩條相反的流</h2>
+      <div style="font-size:13px;margin-bottom:4px"><b id="fmUnitLbl">蘋果 · 每箱</b> · 現在的價錢 <b id="fmPrice">$3.00（每箱）</b></div>
+      <div class="read">
+        <span class="k">貨 → 買菜的人（成交了幾份）</span><span class="v" id="fmSold">0</span>
+        <span class="k">錢 → 農夫（總共）</span><span class="v" id="fmFlowed">$0.00</span>
+        <span class="k">攤位上還剩幾份貨</span><span class="v" id="fmStock">180</span>
+        <span class="k">農夫的錢箱</span><span class="v" id="fmCash">$0.00</span>
+        <span class="k">買菜人的菜籃裡有幾份</span><span class="v" id="fmBaskets">0</span>
+        <span class="k">買菜人的錢包還剩多少</span><span class="v" id="fmWallet">$900.00</span>
+      </div>
+      <div class="small" style="margin-top:5px">這兩條流剛好相反，而且都不會不見：菜籃裡多一份，攤位上就少一份；錢箱裡多一塊，錢包裡就少一塊。來查帳 — 兩邊的數字永遠要對得起來。</div>
+      <div id="fmLog" style="margin-top:7px;font-size:12.3px;color:#41607a;line-height:1.55"></div>
+    </div>
+
+    <div class="card">
+      <h2>這個市場教我們的五件事</h2>
+      <div class="small" style="font-size:12.3px;color:#14324a;line-height:1.65">
+        <b>一 · 價錢是平衡出來的，不是喊出來的。</b>櫃台停在兩邊壓力一樣大的地方，那個地方就是市場的平衡價錢。<br>
+        <b>二 · 缺貨就是被擠。</b>農夫的房間變小（乾旱、賣光光），他們的壓力就照玻意耳定律爬上去，價錢一定要漲到重新平衡為止。<br>
+        <b>三 · 貨太多，價錢會軟下去。</b>供給室塞滿了貨，每個農夫的壓力反而變小，櫃台往另一邊漂，價錢就軟了。<br>
+        <b>四 · 貨和錢走相反的方向。</b>櫃台上不會生出東西來：一箱貨往左，一枚錢往右，兩邊的總數永遠對得起來。<br>
+        <b>五 · Z 是市場的健康數字。</b>平靜的日子接近 1；人擠人的節慶日跑到 1 以上；市場冷到大家黏在一起的時候，掉到 1 以下。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>氣體公式（UTPF）</h2>
+      <div class="formula">
+        Π·V = Z·Q·T &nbsp;&nbsp;·&nbsp;&nbsp; Z = ΠV / (QT)<br>
+        櫃台會停下來 ⟺ 兩邊壓力跟習慣價彈簧平衡；彈簧關掉 ⟺ Π<sub>D</sub> = Π<sub>S</sub><br>
+        玻意耳定律：T 和 Q 不變的時候，Π·V 保持不變<br>
+        F = −QT·ln(V/V<sub>0</sub>) + φ(T) &nbsp;&nbsp;·&nbsp;&nbsp; G = F + ΠV
+      </div>
+      <div class="read" style="margin-top:6px">
+        <span class="k">功的那一項 −QT·ln(V/V₀)，需求那邊</span><span class="v" id="wD">0.00</span>
+        <span class="k">功的那一項 −QT·ln(V/V₀)，供給那邊</span><span class="v" id="wS">0.00</span>
+      </div>
+      <div class="small" style="margin-top:6px">Z 是狀態的分數，不是叫你買也不是叫你賣。櫃台往哪邊走（是 ΔΠ 在推它）才是價錢在動。</div>
+    </div>
+  </div>
+</div>
+<div class="foot">UTPF 農夫市場 — 氣體模型小朋友版 · 裡面的物理：壓力是用小點點撞牆壁和撞櫃台的力氣，在大約 4 秒的移動窗口裡量出來的；Z 是用真的量到的狀態（Π、V、Q、T）算出來的，不是用猜的，這個模擬器從頭到尾沒有用供需曲線，也沒有用彈性。在櫃台成交的時候，貨和錢都守恆 — 一箱貨對一筆錢，可以在面板上查帳。櫃台滑太快的時候會對氣體作功，被擠的那邊會短暫變熱一下，等市場安定下來才退燒。市場不是真的氣體：人會看天氣、看新聞；恆溫器和習慣價彈簧就是在代替這一部分。</div>
+
+<script>
+"use strict";
+/* ============ UTPF 農夫市場 — 氣體模型 ============
+   One cylinder, two chambers, one free piston.
+   Pressure is MEASURED from particle collisions (walls + piston).
+   Z = P_meas * V / (Q * T * ZNORM); ZNORM fixed by calibration so
+   an ideal (non-interacting) gas reads Z = 1.
+   Price = fair * exp((pistonX - centre) / LAMBDA).              */
+
+const ZNORM = 626;          // calibration constant for this geometry (set headlessly; theory ~650)
+const BOYLE_T = 1.15;       // below this, herding pull-back can win
+const PARTICLE_R = 3;
+const XL = 68, XR = 892, Y0 = 118, Y1 = 322;   // cylinder inner bounds
+const X0 = 480;                                // piston centre = fair value
+const LAMBDA = 460;                            // px per e-fold of price
+const PISTON_HW = 7;                           // piston half-width
+const PMIN = XL + 90 + PISTON_HW, PMAX = XR - 90 - PISTON_HW;
+const V0 = (X0 - PISTON_HW - XL) * (Y1 - Y0) / 100;  // chamber volume at centre
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const chart = document.getElementById('chart');
+const cctx = chart.getContext('2d');
+const $ = id => document.getElementById(id);
+
+function gauss() { return (Math.random() + Math.random() + Math.random() + Math.random() - 2) / 1.4; }
+
+const piston = { x: X0, v: 0 };
+
+class Chamber {
+  constructor(side, color, dark) {
+    this.side = side; this.color = color; this.dark = dark;
+    this.T = 0.95; this.qTarget = 80; this.parts = [];
+    this.momWindow = 0; this.winTime = 0; this.winHits = 0; this.bucketT = 0; this.hist = [];
+    this.P = 0; this.Z = 1;
+  }
+  bounds() {
+    return this.side === 'D' ? { x0: XL, x1: piston.x - PISTON_HW }
+                             : { x0: piston.x + PISTON_HW, x1: XR };
+  }
+  get W() { const b = this.bounds(); return b.x1 - b.x0; }
+  get A() { return this.W * (Y1 - Y0); }
+  get V() { return this.A / 100; }
+  get Q() { return this.parts.length; }
+  get Pi() { return this.Z * this.Q * this.T / this.V; }
+  spawn(n) {
+    const b = this.bounds();
+    for (let i = 0; i < n; i++) {
+      const sp = Math.sqrt(this.T) * 62;
+      this.parts.push({ x: b.x0 + 16 + Math.random() * Math.max(10, this.W - 32),
+                        y: Y0 + 16 + Math.random() * (Y1 - Y0 - 32),
+                        vx: gauss() * sp, vy: gauss() * sp });
+    }
+  }
+  step(dt, interact) {
+    if (this.Q < this.qTarget && Math.random() < dt * 14) this.spawn(1);
+    if (this.Q > this.qTarget && Math.random() < dt * 14) this.parts.pop();
+    const { x0, x1 } = this.bounds();
+    const vp = piston.v;
+    // thermostat (heat bath): hold <v^2> = 1300*T
+    if (this.Q > 0) {
+      let mv = 0;
+      for (const p of this.parts) mv += p.vx * p.vx + p.vy * p.vy;
+      mv /= this.Q;
+      if (mv > 0) {
+        const f = Math.sqrt((1300 * this.T) / mv);
+        const s = 1 + (f - 1) * Math.min(1, dt * 2.5);
+        for (const p of this.parts) { p.vx *= s; p.vy *= s; }
+      }
+    }
+    // herding pull-back near walls when cold
+    const cold = interact ? Math.max(0, (BOYLE_T - this.T) / BOYLE_T) : 0;
+    const gamma = 0.8 * cold;
+    const isD = this.side === 'D';
+    for (const p of this.parts) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (gamma > 0) {
+        if (p.x - x0 < 27 && p.vx < 0) p.vx -= p.vx * gamma * dt;
+        if (x1 - p.x < 27 && p.vx > 0) p.vx -= p.vx * gamma * dt;
+        if (p.y - Y0 < 27 && p.vy < 0) p.vy -= p.vy * gamma * dt;
+        if (Y1 - p.y < 27 && p.vy > 0) p.vy -= p.vy * gamma * dt;
+      }
+      // fixed outer wall (demand: left; supply: right)
+      if (isD) {
+        if (p.x < x0 + PARTICLE_R) {
+          if (p.vx < 0) { this.momWindow += 2 * -p.vx; this.winHits++; }
+          p.vx = Math.abs(p.vx); p.x = x0 + PARTICLE_R;
+        }
+      } else {
+        if (p.x > x1 - PARTICLE_R) {
+          if (p.vx > 0) { this.momWindow += 2 * p.vx; this.winHits++; }
+          p.vx = -Math.abs(p.vx); p.x = x1 - PARTICLE_R;
+        }
+      }
+      // piston face (moving wall): reflect in the piston's frame
+      if (isD) {
+        if (p.x > x1 - PARTICLE_R) {
+          const rel = p.vx - vp;
+          if (rel > 0) { this.momWindow += 2 * rel; this.winHits++; p.vx = 2 * vp - p.vx; }
+          else p.vx = vp - (vp - p.vx) * 0.3;
+          p.x = x1 - PARTICLE_R;
+        }
+      } else {
+        if (p.x < x0 + PARTICLE_R) {
+          const rel = p.vx - vp;
+          if (rel < 0) { this.momWindow += 2 * -rel; this.winHits++; p.vx = 2 * vp - p.vx; }
+          else p.vx = vp - (vp - p.vx) * 0.3;
+          p.x = x0 + PARTICLE_R;
+        }
+      }
+      // top / bottom walls
+      if (p.y < Y0 + PARTICLE_R) {
+        if (p.vy < 0) { this.momWindow += 2 * -p.vy; this.winHits++; }
+        p.vy = Math.abs(p.vy); p.y = Y0 + PARTICLE_R;
+      }
+      if (p.y > Y1 - PARTICLE_R) {
+        if (p.vy > 0) { this.momWindow += 2 * p.vy; this.winHits++; }
+        p.vy = -Math.abs(p.vy); p.y = Y1 - PARTICLE_R;
+      }
+    }
+    if (interact) this.interact();
+    // rolling ~4 s pressure window
+    this.winTime += dt; this.bucketT += dt;
+    if (this.bucketT >= 0.25) {
+      this.hist.push({ mom: this.momWindow, t: this.winTime, hits: this.winHits });
+      this.momWindow = 0; this.winTime = 0; this.bucketT = 0; this.winHits = 0;
+      if (this.hist.length > 16) this.hist.shift();
+      let M = 0, Tt = 0, H = 0;
+      for (const b of this.hist) { M += b.mom; Tt += b.t; H += b.hits; }
+      if (H >= 6 && Tt > 0 && this.Q > 0) {
+        const per = 2 * (this.W + (Y1 - Y0));
+        const Praw = M / (per * Tt);
+        this.P = Praw;
+        const z = (Praw * this.A) / (this.Q * this.T) / ZNORM;
+        this.Z += (z - this.Z) * 0.3;
+      }
+    }
+  }
+  interact() {
+    // excluded volume: dots have size, a crowded chamber pushes back (Z > 1)
+    const ps = this.parts, n = ps.length;
+    for (let i = 0; i < n; i++) {
+      const a = ps[i];
+      for (let j = i + 1; j < n; j++) {
+        const b = ps[j];
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 > 36 * 36 || d2 === 0) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
+        if (d < PARTICLE_R * 2) {
+          const rvx = b.vx - a.vx, rvy = b.vy - a.vy, vn = rvx * nx + rvy * ny;
+          if (vn < 0) { a.vx += vn * nx; a.vy += vn * ny; b.vx -= vn * nx; b.vy -= vn * ny; }
+          const push = (PARTICLE_R * 2 - d) / 2;
+          a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
+        }
+      }
+    }
+  }
+  draw() {
+    const { x0, x1 } = this.bounds();
+    ctx.fillStyle = this.color; ctx.globalAlpha = 0.16;
+    ctx.fillRect(x0, Y0, x1 - x0, Y1 - Y0); ctx.globalAlpha = 1;
+    ctx.fillStyle = this.color;
+    for (const p of this.parts) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, PARTICLE_R, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+const dem = new Chamber('D', '#2277cc', '#bcd9f7');
+const sup = new Chamber('S', '#dd6633', '#f8d3bd');
+dem.spawn(80); sup.spawn(80);
+
+const sim = { fair: 150, trades: 0, history: [], last: performance.now() };
+const BASE = { qd: 80, qs: 80 }; // slider crowd sizes; the market layer may thin them (sold out / empty wallets)
+Object.defineProperty(sim, 'price', { get() { return sim.fair * Math.exp((piston.x - X0) / LAMBDA); } });
+window.__sim = { dem, sup, sim, piston };
+
+function readControls() {
+  dem.T = +$('tD').value; dem.qTarget = +$('qD').value; BASE.qd = dem.qTarget;
+  sup.T = +$('tS').value; sup.qTarget = +$('qS').value; BASE.qs = sup.qTarget;
+  sim.fair = +$('eq').value;
+  $('tDVal').textContent = dem.T.toFixed(2); $('qDVal').textContent = dem.qTarget;
+  $('tSVal').textContent = sup.T.toFixed(2); $('qSVal').textContent = sup.qTarget;
+  $('eqVal').textContent = '$' + sim.fair;
+}
+['tD','qD','tS','qS','eq'].forEach(id => $(id).addEventListener('input', readControls));
+readControls();
+
+function setSliders(o) { for (const k in o) { if ($(k)) $(k).value = o[k]; } readControls(); }
+const scenarios = {
+  open:     { tD:0.95, qD:80,  tS:0.95, qS:80  },
+  sunny:    { tD:1.60, qD:120, tS:1.10, qS:90  },
+  festival: { tD:2.40, qD:140, tS:1.30, qS:100 },
+  rainy:    { tD:0.55, qD:35,  tS:0.80, qS:70  },
+  glut:     { tD:1.00, qD:85,  tS:0.85, qS:140 },
+  drought:  { tD:1.30, qD:95,  tS:1.50, qS:40  }
+};
+/* stock presets removed — products are wired in the market layer below */
+document.querySelectorAll('[data-scn]').forEach(b => b.addEventListener('click', () => setSliders(scenarios[b.dataset.scn])));
+
+$('resetBtn').addEventListener('click', () => { piston.x = X0; piston.v = 0; sim.trades = 0; sim.history = []; });
+$('shoveR').addEventListener('click', () => { piston.v += 240; });
+$('shoveL').addEventListener('click', () => { piston.v -= 240; });
+
+function drawStage(dPi) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // price ruler
+  const ry = 66;
+  ctx.strokeStyle = '#3d5a70'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(XL, ry); ctx.lineTo(XR, ry); ctx.stroke();
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  for (const r of [0.5, 0.75, 1, 1.5, 2]) {
+    const x = X0 + LAMBDA * Math.log(r);
+    ctx.strokeStyle = r === 1 ? '#d4a017' : '#3d5a70'; ctx.lineWidth = r === 1 ? 3 : 1.5;
+    ctx.beginPath(); ctx.moveTo(x, ry - 7); ctx.lineTo(x, ry + 7); ctx.stroke();
+    ctx.fillStyle = r === 1 ? '#ffd34d' : '#9fb6c6';
+    ctx.fillText('x' + r, x, ry - 12);
+  }
+  ctx.fillStyle = '#ffd34d'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('習慣價', X0, ry + 24);
+  // piston marker on the ruler
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.moveTo(piston.x, ry + 12); ctx.lineTo(piston.x - 7, ry + 24); ctx.lineTo(piston.x + 7, ry + 24); ctx.closePath(); ctx.fill();
+  ctx.font = 'bold 19px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('價錢  $' + sim.price.toFixed(2) + '（' + FM.unit + '）', XL, 34);
+  ctx.font = '12.5px sans-serif'; ctx.fillStyle = '#9fb6c6'; ctx.textAlign = 'right';
+  ctx.fillText('上面這把尺就是價錢 — 櫃台的小箭頭指著現在的價錢', XR, 34);
+
+  // chambers + particles
+  dem.draw(); sup.draw(); FM.drawTokens();
+  // cylinder walls
+  ctx.strokeStyle = '#9fb6c6'; ctx.lineWidth = 5;
+  ctx.strokeRect(XL - 4, Y0 - 4, XR - XL + 8, Y1 - Y0 + 8);
+  // piston
+  const px = piston.x;
+  const grad = ctx.createLinearGradient(px - PISTON_HW, 0, px + PISTON_HW, 0);
+  grad.addColorStop(0, '#5a7186'); grad.addColorStop(0.5, '#d7e3ec'); grad.addColorStop(1, '#5a7186');
+  ctx.fillStyle = grad;
+  ctx.fillRect(px - PISTON_HW, Y0 - 12, PISTON_HW * 2, Y1 - Y0 + 24);
+  ctx.strokeStyle = '#14324a'; ctx.lineWidth = 2;
+  ctx.strokeRect(px - PISTON_HW, Y0 - 12, PISTON_HW * 2, Y1 - Y0 + 24);
+  if (Math.abs(piston.v) > 25) {  // motion streaks
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    const dir = Math.sign(piston.v);
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath(); ctx.moveTo(px - dir * (PISTON_HW + i * 9), Y0 + 26);
+      ctx.lineTo(px - dir * (PISTON_HW + i * 9), Y1 - 26); ctx.stroke();
+    }
+  }
+  ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#14324a';
+  ctx.save(); ctx.translate(px, (Y0 + Y1) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('櫃台', 0, 4.5); ctx.restore();
+  // captions
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#7fc4ff'; ctx.fillText('需求室 — 帶著錢幣的買菜人', (XL + px) / 2, Y1 + 34);
+  ctx.fillStyle = '#ffb08a'; ctx.fillText('供給室 — 帶著一箱箱貨的農夫', (px + XR) / 2, Y1 + 34);
+  ctx.font = '12.5px sans-serif'; ctx.fillStyle = '#c8d9e4';
+  ctx.fillText('V ' + Math.round(dem.V / V0 * 100) + '% · Π ' + dem.Pi.toFixed(2) + ' · Z ' + dem.Z.toFixed(2), (XL + px) / 2, Y1 + 54);
+  ctx.fillText('V ' + Math.round(sup.V / V0 * 100) + '% · Π ' + sup.Pi.toFixed(2) + ' · Z ' + sup.Z.toFixed(2), (px + XR) / 2, Y1 + 54);
+  ctx.font = 'bold 13.5px sans-serif'; ctx.fillStyle = '#ffffff';
+  const msg = Math.abs(piston.v) > 8 ? (piston.v > 0 ? '櫃台往右滑 — 價錢在漲' : '櫃台往左滑 — 價錢在跌')
+            : (piston.x <= PMIN + 1 || piston.x >= PMAX - 1) && Math.abs(dPi) > 0.04 ? '櫃台被頂到最邊邊 — 漲跌到極限了'
+            : '櫃台停好了 — 市場剛好平衡';
+  ctx.fillText(msg, X0, Y1 + 82);
+}
+
+function drawChart() {
+  const w = chart.width, h = chart.height;
+  cctx.clearRect(0, 0, w, h);
+  cctx.fillStyle = '#ffffff'; cctx.fillRect(0, 0, w, h);
+  if (sim.history.length < 2) return;
+  const xs = sim.history.slice(-360);
+  let mn = Math.min(...xs, sim.fair), mx = Math.max(...xs, sim.fair);
+  const pad = (mx - mn) * 0.15 + 0.5; mn -= pad; mx += pad;
+  const Y = v => h - 8 - (v - mn) / (mx - mn) * (h - 16);
+  cctx.strokeStyle = '#d4a017'; cctx.setLineDash([5, 4]); cctx.lineWidth = 1.2;
+  cctx.beginPath(); cctx.moveTo(0, Y(sim.fair)); cctx.lineTo(w, Y(sim.fair)); cctx.stroke(); cctx.setLineDash([]);
+  cctx.strokeStyle = '#14324a'; cctx.lineWidth = 1.8; cctx.beginPath();
+  xs.forEach((v, i) => { const x = i / 359 * w; i ? cctx.lineTo(x, Y(v)) : cctx.moveTo(x, Y(v)); });
+  cctx.stroke();
+  cctx.fillStyle = '#5a7186'; cctx.font = '11px sans-serif'; cctx.textAlign = 'left';
+  cctx.fillText('價錢的歷史（金色虛線 = 習慣價）', 8, 14);
+}
+
+
+/* ================================================================
+   農夫市場（小朋友版）— 貨往一邊走，錢往另一邊回。
+   裡面的物理跟英文版一模一樣：兩個氣室、一座櫃台。
+   成交在櫃台發生，次數由兩邊量到的壓力決定；每成交一次，
+   一箱貨從供給室跑到需求室，價錢的錢剛好跑回去。
+   貨和錢都不會不見，也不會自己生出來 — 面板上可以查帳。
+   ================================================================ */
+const FM = {
+  product: '蘋果', unit: '每箱', fair: 3.00,
+  stock: 180, stock0: 180, stockIn: 0, wallet: 900, wallet0: 900,
+  cash: 0, baskets: 0, sold: 0, flowed: 0, tradeClock: 0, uiClock: 0,
+  tokens: [], log: [], flags: {}
+};
+const PRODUCTS = {
+  apples:   { name: '蘋果', unit: '每箱', fair: 3.00, stock: 180 },
+  tomatoes: { name: '番茄', unit: '每箱', fair: 4.50, stock: 150 },
+  eggs:     { name: '雞蛋', unit: '每打', fair: 5.00, stock: 160 },
+  flowers:  { name: '鮮花', unit: '每束', fair: 6.00, stock: 110 },
+  honey:    { name: '蜂蜜', unit: '每罐', fair: 8.00, stock: 70 },
+  cheese:   { name: '起司', unit: '每塊', fair: 9.00, stock: 55 }
+};
+function say(msg) {
+  FM.log.unshift(msg); if (FM.log.length > 4) FM.log.pop();
+  const el = $('fmLog'); if (el) el.innerHTML = FM.log.map(m => '<div>• ' + m + '</div>').join('');
+}
+function setProduct(key) {
+  const p = PRODUCTS[key]; if (!p) return;
+  FM.product = p.name; FM.unit = p.unit;
+  setSliders({ eq: p.fair });
+  FM.stock0 = p.stock; newDay(false);
+  say('今天這個攤位賣的是' + p.name + ' — 大家習慣的價錢是 $' + p.fair.toFixed(2) + '（' + p.unit + '），農夫帶了 ' + p.stock + ' 份來市場。');
+}
+function newDay(announce = true) {
+  FM.stock = FM.stock0; FM.stockIn = 0; FM.wallet = FM.wallet0;
+  FM.cash = 0; FM.baskets = 0; FM.sold = 0; FM.flowed = 0; FM.flags = {};
+  piston.x = X0; piston.v = 0; sim.history = []; sim.trades = 0;
+  if (announce) say('新的一天開始了：農夫把貨補滿，買菜的人帶著新的錢包來。');
+  updateMarketUI();
+}
+const SCN_STOCK = { glut: 2.0, drought: 0.35 };
+document.querySelectorAll('[data-scn]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.scn;
+  if (SCN_STOCK[k]) { const ns = Math.max(5, Math.round(FM.stock0 * SCN_STOCK[k])); FM.stockIn += ns - FM.stock; FM.stock = ns; say(k === 'glut' ? '豐收！農夫帶了平常兩倍的貨來 — 看價錢會不會被這麼多貨壓下去。' : '乾旱年：收成只有平常的三分之一左右，能賣的貨很少。'); }
+  if (k === 'festival') say('節慶日：市場擠滿了人，好熱鬧 — 看 Z 會不會跑到 1 以上（擠的意思）。');
+  if (k === 'rainy') say('下雨天：買菜的人變少了，需求室冷冷清清 — 價錢會慢慢往下掉。');
+}));
+document.querySelectorAll('[data-pro]').forEach(b => b.addEventListener('click', () => setProduct(b.dataset.pro)));
+$('restockBtn').addEventListener('click', () => {
+  const add = Math.round(FM.stock0 * 0.6);
+  FM.stock += add; FM.stockIn += add;
+  say('貨車來了：多卸了 ' + add + ' 份' + FM.product + '到攤位上。');
+});
+$('newDayBtn').addEventListener('click', () => newDay(true));
+
+function fireTrade() {
+  const price = sim.price;
+  FM.stock--; FM.baskets++; FM.sold++;
+  FM.wallet -= price; FM.cash += price; FM.flowed += price;
+  const y = Y0 + 24 + Math.random() * (Y1 - Y0 - 48);
+  FM.tokens.push({ kind: 'crate', x: piston.x + PISTON_HW + 4, y, vx: -150 - Math.random() * 60, t: 0, life: 0.55 });
+  FM.tokens.push({ kind: 'coin', x: piston.x - PISTON_HW - 4, y: y + 10, vx: 150 + Math.random() * 60, t: 0, life: 0.55 });
+  if (FM.sold === 50) say('已經成交 50 次了 — 每一次都是一箱貨往左走、一枚錢往右回。');
+  if (FM.stock === 0) say('賣光光！攤位空了。沒有貨在後面頂著，看價錢往上爬 — 這就叫做缺貨。');
+}
+FM.drawTokens = function () {
+  for (const tk of FM.tokens) {
+    const a = 1 - tk.t / tk.life;
+    if (tk.kind === 'crate') {
+      ctx.globalAlpha = a; ctx.fillStyle = '#a5692f';
+      ctx.fillRect(tk.x - 6, tk.y - 5, 12, 10);
+      ctx.strokeStyle = '#6e4218'; ctx.lineWidth = 1.5; ctx.strokeRect(tk.x - 6, tk.y - 5, 12, 10);
+    } else {
+      ctx.globalAlpha = a; ctx.fillStyle = '#ffd34d';
+      ctx.beginPath(); ctx.arc(tk.x, tk.y, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#a87f00'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = '#7a5c00'; ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('$', tk.x, tk.y + 2.5);
+    }
+    ctx.globalAlpha = 1;
+  }
+};
+function updateMarketUI() {
+  $('fmPrice').textContent = '$' + sim.price.toFixed(2) + '（' + FM.unit + '）';
+  $('fmSold').textContent = FM.sold;
+  $('fmFlowed').textContent = '$' + FM.flowed.toFixed(2);
+  $('fmStock').textContent = FM.stock;
+  $('fmCash').textContent = '$' + FM.cash.toFixed(2);
+  $('fmBaskets').textContent = FM.baskets;
+  $('fmWallet').textContent = '$' + Math.max(0, FM.wallet).toFixed(2);
+  $('fmUnitLbl').textContent = FM.product + ' · ' + FM.unit;
+}
+function tickMarket(dt) {
+  sup.qTarget = FM.stock > 0 ? BASE.qs : Math.min(BASE.qs, 3);
+  dem.qTarget = FM.wallet >= sim.price ? BASE.qd : Math.max(15, Math.round(BASE.qd * 0.4));
+  const rate = 14 * Math.sqrt(Math.max(0, dem.Pi) * Math.max(0, sup.Pi));
+  FM.tradeClock += dt * rate;
+  while (FM.tradeClock >= 1) {
+    FM.tradeClock -= 1;
+    if (FM.stock > 0 && FM.wallet >= sim.price) fireTrade(); else break;
+  }
+  for (const tk of FM.tokens) { tk.x += tk.vx * dt; tk.t += dt; }
+  FM.tokens = FM.tokens.filter(tk => tk.t < tk.life);
+  const ratio = sim.price / Math.max(0.01, sim.fair);
+  if (ratio > 1.5 && !FM.flags.dear) { FM.flags.dear = 1; say('價錢比習慣價高出五成了 — 是缺貨在說話。'); }
+  if (ratio < 0.62 && !FM.flags.cheap) { FM.flags.cheap = 1; say('價錢掉得比習慣價低很多 — 貨比想買的人還多。'); }
+  if ((FM.uiClock += dt) > 0.15) { FM.uiClock = 0; updateMarketUI(); }
+}
+window.__fm = FM;
+setProduct('apples'); // 一打開就把習慣價、存貨和單位對好
+let uiTick = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - sim.last) / 1000); sim.last = now;
+  const interact = $('interact').checked;
+  // piston dynamics: pressure gap pushes, spring (arbitrage) anchors, friction damps
+  const dPi0 = dem.Pi - sup.Pi;
+  const spring = $('anchor').checked ? 0.9 * (piston.x - X0) : 0;
+  const acc = 800 * dPi0 - spring - 1.6 * piston.v;
+  piston.v += acc * dt;
+  piston.v = Math.max(-170, Math.min(170, piston.v));
+  piston.x += piston.v * dt;
+  if (piston.x < PMIN) { piston.x = PMIN; piston.v = 0; }
+  if (piston.x > PMAX) { piston.x = PMAX; piston.v = 0; }
+  const sub = 2, sdt = dt / sub;
+  for (let i = 0; i < sub; i++) { dem.step(sdt, interact); sup.step(sdt, interact); }
+  sim.trades += (Math.abs(piston.v) * 0.55 + Math.abs(dPi0) * 22) * dt;
+
+  drawStage(dPi0);
+  if ((uiTick += dt) > 0.12) {
+    uiTick = 0;
+    sim.history.push(sim.price); if (sim.history.length > 720) sim.history.shift();
+    drawChart();
+    const zShow = (dem.Z * dem.Q * dem.T + sup.Z * sup.Q * sup.T) / Math.max(1e-9, dem.Q * dem.T + sup.Q * sup.T);
+    $('priceOut').textContent = '$' + sim.price.toFixed(2);
+    $('eqOut').textContent = '$' + sim.fair.toFixed(2);
+    $('piOut').textContent = Math.log(sim.fair / sim.price).toFixed(3);
+    $('dpiOut').textContent = dPi0.toFixed(3);
+    const off = piston.x - X0;
+    $('posOut').textContent = Math.abs(off) < 3 ? '正中央' : (off > 0 ? '+' : '') + Math.round(off) + ' 格（' + (off > 0 ? '往農夫那邊' : '往買菜人那邊') + '）';
+    $('tradesOut').textContent = Math.round(sim.trades);
+    $('piD').textContent = dem.Pi.toFixed(2); $('piS').textContent = sup.Pi.toFixed(2);
+    $('zD').textContent = dem.Z.toFixed(2); $('zS').textContent = sup.Z.toFixed(2);
+    $('vD').textContent = Math.round(dem.V / V0 * 100) + '%'; $('vS').textContent = Math.round(sup.V / V0 * 100) + '%';
+    $('zOut').textContent = zShow.toFixed(2);
+    const zp = 50 + (zShow - 1) / 1.2 * 50;
+    $('zDot').style.left = Math.max(1, Math.min(99, zp)) + '%';
+    $('zState').textContent = zShow > 1.15 ? '比理想還擠 — 人擠人' : zShow < 0.85 ? '比理想還軟 — 大家黏在一起' : '接近理想';
+    const badge = $('flowBadge');
+    if ((piston.x <= PMIN + 1 || piston.x >= PMAX - 1) && Math.abs(dPi0) > 0.04) { badge.className = 'badge pin'; badge.textContent = '被頂到邊邊 — 漲跌到極限'; }
+    else if (piston.v > 8) { badge.className = 'badge up'; badge.textContent = '櫃台往右滑 — 價錢在漲'; }
+    else if (piston.v < -8) { badge.className = 'badge dn'; badge.textContent = '櫃台往左滑 — 價錢在跌'; }
+    else { badge.className = 'badge eq'; badge.textContent = '櫃台停好了 — 市場剛好平衡'; }
+    $('wD').textContent = (-dem.Q * dem.T * Math.log(dem.V / V0) / 100).toFixed(2);
+    $('wS').textContent = (-sup.Q * sup.T * Math.log(sup.V / V0) / 100).toFixed(2);
+  }
+  tickMarket(dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
