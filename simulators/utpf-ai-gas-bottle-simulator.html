@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>AI Gas Bottle — AI 瓶子氣體實驗室</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", "PMingLiU", serif; max-width: 900px;
+         margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.45; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 19px; margin: 22px 0 6px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  .sub { color: #555; margin-top: 0; }
+  .box { background: #f6f8fb; border: 1px solid #ccd6e0; border-radius: 8px;
+         padding: 12px 16px; margin: 12px 0; }
+  .controls label { display: block; margin: 8px 0 2px; font-weight: bold; }
+  .controls input[type=range] { width: 100%; }
+  .controls input[type=checkbox] { transform: scale(1.3); margin-right: 6px; }
+  .check { font-size: 16px; margin: 8px 0; }
+  .val { color: #0b5fa5; font-weight: bold; }
+  button { font-size: 15px; padding: 7px 14px; margin: 4px 6px 4px 0;
+           border-radius: 6px; border: 1px solid #888; background: #fff; cursor: pointer; }
+  button:hover { background: #eef4fb; }
+  button.scenario { background: #e8f1fb; border-color: #0b5fa5; }
+  button.test { background: #fdf3e3; border-color: #b56b00; }
+  button.danger { background: #fdecea; border-color: #b3261e; }
+  .readouts { display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: 17px; }
+  .readouts b { font-size: 19px; }
+  .bad { color: #b3261e; }
+  .good { color: #0b7a3e; }
+  canvas { border: 1px solid #999; border-radius: 6px; background: #fff;
+           max-width: 100%; display: block; margin: 8px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border: 1px solid #aaa; padding: 5px 8px; text-align: center; }
+  th { background: #eef2f6; }
+  .small { font-size: 13.5px; color: #555; }
+  .limits { background: #fff8e6; border: 1px solid #d9b64f; }
+  #reading { font-size: 18px; font-weight: bold; color: #0b5fa5; }
+  code { background: #eef; padding: 0 3px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>AI Gas Bottle — AI 瓶子氣體實驗室</h1>
+<p class="sub">AI 瓶子：把 Anthropic 老闆達里奧的故事，翻譯成 UTPF 的氣體圖。
+錢（Q）先衝進來，真正做出來的東西（V）晚一年才到，期待（T）跑在最前面。
+按一個故事按鈕，看瓶子什麼時候破掉 — 還是活下來。</p>
+
+<div class="box">
+<b>UTPF 翻譯（一個拿來想事情的對照，不是量到的數字）：</b>
+<table>
+<tr><th>影片裡的東西</th><th>氣體（UTPF）</th><th>在這裡是什麼意思</th></tr>
+<tr><td>算力合約：先簽約、以後付錢</td><td>Q（錢）</td><td>今年簽了多少算力合約（單位：10 億美元）</td></tr>
+<tr><td>真正做出來的 AI、真正賺到的錢</td><td>V（量）</td><td>今年真的做出來、賣出去的東西</td></tr>
+<tr><td>AI 能收的價錢</td><td>Π（壓力）</td><td>東西不夠，大家搶，價錢就上去；太多，就掉下來</td></tr>
+<tr><td>大家對 AI 的期待有多熱</td><td>T（溫度）</td><td>期待越熱，瓶子越燙；T = 1 + 每年成長率</td></tr>
+<tr><td>家庭收入、還不出錢</td><td>旁邊的小瓶子</td><td>AI 搶了工作，家庭收入掉下來，壞帳就長出來</td></tr>
+<tr><td>銀行本錢 26</td><td>小瓶子的殼有多厚</td><td>一年壞帳超過 26，銀行就撐不住了</td></tr>
+<tr><td>—</td><td>Z = ΠV / (QT)</td><td>瓶子有多緊：接近 1 健康，低於 0.5 危險</td></tr>
+</table>
+<p class="small">故事裡的數字是從影片來的：公司一開始有現金 150，家庭欠債 190，
+銀行本錢 26。這些是模型裡的假設，不是量到的數字。
+聰明的公司會看 Z 收手：Z 低於 0.5，就不簽那麼多新合約。
+「達里奧不停手」是把這個煞車關掉 — 看看會發生什麼事。</p>
+</div>
+
+<h2>控制</h2>
+<div class="controls">
+<label>期待熱度（每年成長率）：<span class="val" id="heatVal">60%</span></label>
+<input type="range" id="heatSlider" min="0" max="100" step="5" value="60">
+<label>蓋資料中心要幾年：<span class="val" id="delayVal">1 年</span></label>
+<input type="range" id="delaySlider" min="0" max="2" step="1" value="1">
+<label>AI 真的有多厲害：<span class="val" id="delVal">100%</span></label>
+<input type="range" id="delSlider" min="50" max="100" step="5" value="100">
+<div class="check"><input type="checkbox" id="lateBox">客戶的錢晚一年到（收入比期待晚一年）</div>
+<div class="check"><input type="checkbox" id="taxBox">3% AI 稅：AI 收入的 3% 分給家庭</div>
+<div class="check"><input type="checkbox" id="goodsBox">新東西長出來：2028 年起每年多賣新藥、新東西（治病、長壽）</div>
+<div class="check"><input type="checkbox" id="buyBox">達里奧不停手：關掉 Z 煞車，繼續大買算力</div>
+<p class="small">固定在這個實驗室裡：2026 年是第一年；公司一開始現金 150；
+家庭收入一開始 100，欠債 190；銀行本錢 26；AI 每年會變厲害一點（+10%，最多 100%）。
+新工作：每 10 個被 AI 搶走的工作，大約 6 個會變成新的工作（失業潮故事裡是 0 個）。</p>
+</div>
+
+<h2>故事 — 按一個</h2>
+<button class="scenario" id="btnNormal">平常的日子</button>
+<button class="scenario" id="btnLedger">達里奧的帳本</button>
+<button class="scenario" id="btnPrudent">達里奧收手版</button>
+<button class="scenario" id="btnBubble">泡沫破掉</button>
+<button class="scenario" id="btnWave">失業潮</button>
+<button class="scenario" id="btnThird">第三個結局</button>
+<button class="scenario" id="btnThirdNoTax">第三個結局，不要稅</button>
+<p>
+<button class="test" id="btnStep">跑一年 ▶</button>
+<button class="test" id="btnRun">跑到 2030 ▶▶</button>
+<button class="test" id="btnCool">期待降溫：熱度 −40</button>
+<button class="test" id="btnTax">3% 稅開 / 關</button>
+<button id="btnReset">重設回 2026</button>
+</p>
+
+<h2>現在是哪一年</h2>
+<div class="readouts">
+<span>年份 = <b id="yearNow">2026 年（還沒開始）</b></span>
+<span>Q 算力合約 = <b id="qNow">—</b></span>
+<span>V 真東西 = <b id="vNow">—</b></span>
+<span>Π 價錢 = <b id="piNow">—</b></span>
+<span>T 期待 = <b id="tNow">—</b></span>
+<span>Z = <b id="zNow">—</b></span>
+</div>
+<div class="readouts">
+<span>公司現金 = <b id="cashNow">—</b></span>
+<span>家庭收入 = <b id="hNow">—</b></span>
+<span>今年壞帳 = <b id="defNow">—</b></span>
+<span>銀行本錢 = <b>26</b></span>
+</div>
+<p id="reading">按一個故事開始。建議先按「達里奧的帳本」，再按「達里奧收手版」，比一比：同樣的數字，只差一個煞車。</p>
+
+<h2>Z 的路 — 瓶子有多緊</h2>
+<canvas id="zCanvas" width="640" height="300"></canvas>
+<p class="small">藍線 = Z。紅虛線 = 0.5，危險線，掉到下面瓶子就快破了。
+灰虛線 = 1.0，健康。紅色 X = 瓶子破掉的那一年。</p>
+
+<h2>氣體瓶子</h2>
+<canvas id="gasCanvas" width="640" height="300"></canvas>
+<div class="readouts">
+<span>Pressure Π = <b id="piVal">—</b></span>
+<span>Volume V = <b id="vVal">—</b></span>
+<span>Gas Q = <b id="qVal">—</b></span>
+<span>Temperature T = <b id="tVal">—</b></span>
+<span>Z = <b id="zVal">—</b></span>
+</div>
+<p class="small">活塞的位置是 V（真正做出來的東西）。橘色點點是 Q（今年簽的算力合約）。
+紅色溫度計是 T（期待有多熱）。下面的綠色條是公司現金，藍色條是家庭收入。</p>
+
+<h2>記分表 — 每一年發生了什麼</h2>
+<table id="scoreTable">
+<tr><th>年</th><th>Q 合約</th><th>V 真東西</th><th>Π 價錢</th>
+<th>T 期待</th><th>Z</th><th>公司現金</th><th>家庭收入</th><th>壞帳</th></tr>
+</table>
+<button id="btnClear">清除記分表</button>
+
+<h2>怎麼玩（短版）</h2>
+<ol>
+<li>按 <b>達里奧的帳本</b>：錢先衝進來，東西晚一年到。看 Z 一路掉，2028 年公司現金變負數 — 瓶子破了。</li>
+<li>按 <b>達里奧收手版</b>：數字一模一樣，只差公司會看 Z 收手。Z 被煞在 0.5，公司活下來了。</li>
+<li>按 <b>泡沫破掉</b>：AI 沒有那麼厲害（60%），錢還是照樣衝進來。2028 年公司破產。</li>
+<li>按 <b>失業潮</b>：AI 馬上就成功（不用等），公司好好的，可是家庭收入一直掉，2028 年壞帳超過銀行本錢。</li>
+<li>按 <b>第三個結局</b>：新藥、新東西長出來，加上 3% 稅。Z 從 0.5 回升到 0.7，家庭收入還變多了，銀行也沒事。</li>
+<li>按 <b>第三個結局，不要稅</b>：公司一樣好，可是 2030 年銀行撐不住了。稅，就是差在這裡。</li>
+<li>自己動手：把「客戶的錢晚一年到」打勾，跑一年，看看現金怎麼掉；再按「期待降溫」，看看 Z 會不會回來。</li>
+</ol>
+
+<div class="box limits">
+<b>老實說的限制 — 相信之前先讀：</b>
+<ul>
+<li>這是一個教學模型，不是預言。故事裡的數字（現金 150、欠債 190、銀行本錢 26、
+新東西每年 +100）是從影片的故事假設來的，不是量到的數字。換一組假設，結果會不一樣。</li>
+<li>氣體數字是 <i>翻譯</i>，不是量到的市場。Z 是從對照算出來的（Z = ΠV/(QT)），
+是用來看模型的方法，不是自然定律。UTPF 裡 T 到底怎麼量，現在還沒有定下來。</li>
+<li>這個模型沒有投資建議。不要因為這些數字去買賣任何東西。</li>
+</ul>
+</div>
+
+<script>
+"use strict";
+function $(id) { return document.getElementById(id); }
+
+// ---- Fixed numbers (assumptions from the video's story, not measurements) ----
+var FIXED = { cash0: 150, debt: 190, bankCapital: 26, zDanger: 0.5 };
+
+// ---- Simulation state ----
+var S;
+function freshState(p) {
+  return {
+    year: 2026, cash: FIXED.cash0, H: 100, VworkPrev: 100, E: 100,
+    ordersHist: { 2024: 100, 2025: 100 },
+    heat: p.heat, delay: p.delay, late: !!p.late, delivery: p.delivery,
+    tax: !!p.tax, newGoods: !!p.newGoods, keepBuying: !!p.keepBuying,
+    newJobRate: (p.newJobRate === undefined ? 0.6 : p.newJobRate),
+    coolFrom: p.coolFrom || null,
+    history: [], over: null   // over: {type:'company'|'bank', year}
+  };
+}
+function heatOf(y) {
+  if (S.coolFrom && y >= S.coolFrom.year) { return S.coolFrom.heat; }
+  return S.heat;
+}
+
+// ---- One year of the model (same equations as the verified prototype) ----
+function stepYear() {
+  if (S.over) { return null; }
+  var y = S.year;
+  var heat = heatOf(y);
+  var g = heat / 100, T = 1 + g;
+  var E_t = S.E;
+  var demand = (y === 2026) ? E_t : E_t / Math.pow(1 + g, S.late ? 1 : 0);
+  var del = Math.min(1, S.delivery + 0.1 * (y - 2026));
+  var planned = E_t * Math.pow(1 + g, S.delay);
+  var capBase = (S.delay === 0) ? planned
+    : (S.ordersHist[y - S.delay] !== undefined ? S.ordersHist[y - S.delay] : 100);
+  var Vpre = capBase * del;
+  var PiPre = Math.min(1.5, Math.max(0.5, 1 + 0.002 * (demand - Vpre)));
+  // The prudent brake: never sign orders that would push Z below 0.5.
+  var zcap = PiPre * Vpre / (FIXED.zDanger * T);
+  var cut = 1, orders = planned;
+  if (!S.keepBuying && planned > zcap) { orders = zcap; cut = +(zcap / planned).toFixed(2); }
+  S.ordersHist[y] = orders;
+  var payments = S.ordersHist[y - S.delay] !== undefined ? S.ordersHist[y - S.delay] : 100;
+  var capacity = payments;
+  var Vwork = capacity * del;
+  var newV = (S.newGoods && y >= 2028) ? 100 * (y - 2027) : 0;
+  var V = Vwork + newV;
+  var Pi = Math.min(1.5, Math.max(0.5, 1 + 0.002 * (demand - V)));
+  var R = Math.min(Vwork, demand) * Pi + newV * 1.0; // cures sell at full price
+  S.cash = S.cash + R - payments;
+  var Q = orders;
+  var Z = (Pi * V) / (Q * T);
+  var displaced = 0.15 * Math.max(0, Vwork - S.VworkPrev);
+  var newJobs = S.newJobRate * displaced;
+  S.H = Math.max(0, S.H - displaced + newJobs + (S.tax ? 0.03 * R : 0));
+  var defaults = FIXED.debt * Math.max(0, (100 - S.H) / 100);
+  var row = { y: y, heat: heat, Q: Q, V: V, Pi: Pi, T: T, Z: Z, R: R,
+    cash: S.cash, H: S.H, def: defaults, cut: cut,
+    broke: S.cash < 0, bankBroke: defaults > FIXED.bankCapital };
+  S.history.push(row);
+  S.VworkPrev = Vwork;
+  S.E = S.E * (1 + heatOf(y) / 100);
+  S.year = y + 1;
+  if (row.broke) { S.over = { type: "company", year: y }; }
+  else if (row.bankBroke) { S.over = { type: "bank", year: y }; }
+  return row;
+}
+
+// ---- One-line reading ----
+function reading() {
+  var h = S.history;
+  if (S.over && S.over.type === "company") {
+    return "公司破產了！瓶子破了 — " + S.over.year + " 年，現金變成負數，付不出合約的錢。";
+  }
+  if (S.over && S.over.type === "bank") {
+    return "銀行撐不住了！壞帳超過銀行本錢 26 — " + S.over.year + " 年，家庭還不出錢，傳到銀行了。";
+  }
+  if (h.length === 0) { return "按一個故事開始。"; }
+  var last = h[h.length - 1];
+  if (last.Z < FIXED.zDanger) {
+    return "Z 只有 " + last.Z.toFixed(2) + "，太低了！瓶子壓得太緊，很危險。";
+  }
+  if (last.Z >= 0.9) {
+    return "Z 回到 " + last.Z.toFixed(2) + "，接近 1，瓶子健康。新的東西長出來了。";
+  }
+  if (last.Z >= 0.7) {
+    return "Z 是 " + last.Z.toFixed(2) + "，瓶子有一點緊，但還撐得住。";
+  }
+  return "Z 是 " + last.Z.toFixed(2) + "，瓶子越來越緊，要小心。";
+}
+
+// ---- Read controls into state (for manual steps) ----
+function readControls() {
+  S.heat = parseFloat($("heatSlider").value);
+  S.delay = parseFloat($("delaySlider").value);
+  S.delivery = parseFloat($("delSlider").value) / 100;
+  S.late = $("lateBox").checked;
+  S.tax = $("taxBox").checked;
+  S.newGoods = $("goodsBox").checked;
+  S.keepBuying = $("buyBox").checked;
+  $("heatVal").textContent = S.heat + "%";
+  $("delayVal").textContent = S.delay + " 年";
+  $("delVal").textContent = Math.round(S.delivery * 100) + "%";
+}
+function syncControls() {
+  $("heatSlider").value = S.heat;
+  $("delaySlider").value = S.delay;
+  $("delSlider").value = Math.round(S.delivery * 100);
+  $("lateBox").checked = S.late;
+  $("taxBox").checked = S.tax;
+  $("goodsBox").checked = S.newGoods;
+  $("buyBox").checked = S.keepBuying;
+  readControls();
+}
+
+// ---- Update readouts + canvases ----
+function update() {
+  readControls();
+  var h = S.history;
+  var last = h.length ? h[h.length - 1] : null;
+  if (last) {
+    $("yearNow").textContent = last.y + " 年";
+    $("qNow").textContent = last.Q.toFixed(0);
+    $("vNow").textContent = last.V.toFixed(0);
+    $("piNow").textContent = last.Pi.toFixed(2);
+    $("tNow").textContent = last.T.toFixed(2);
+    $("zNow").textContent = last.Z.toFixed(2);
+    $("cashNow").textContent = last.cash.toFixed(0);
+    $("hNow").textContent = last.H.toFixed(0);
+    $("defNow").textContent = last.def.toFixed(1);
+    $("piVal").textContent = last.Pi.toFixed(2);
+    $("vVal").textContent = last.V.toFixed(0);
+    $("qVal").textContent = last.Q.toFixed(0);
+    $("tVal").textContent = last.T.toFixed(2);
+    $("zVal").textContent = last.Z.toFixed(2);
+    var zEl = $("zNow");
+    zEl.className = last.Z < FIXED.zDanger ? "bad" : (last.Z >= 0.9 ? "good" : "");
+    $("cashNow").className = last.cash < 0 ? "bad" : "";
+    $("defNow").className = last.def > FIXED.bankCapital ? "bad" : "";
+  } else {
+    $("yearNow").textContent = "2026 年（還沒開始）";
+  }
+  $("reading").textContent = reading();
+  drawChart();
+  drawGas(last);
+}
+function logRow(r) {
+  var t = $("scoreTable");
+  var tr = document.createElement("tr");
+  var cells = [r.y + " 年", r.Q.toFixed(0), r.V.toFixed(0), r.Pi.toFixed(2),
+    r.T.toFixed(2), r.Z.toFixed(2), r.cash.toFixed(0), r.H.toFixed(0), r.def.toFixed(1)];
+  for (var i = 0; i < cells.length; i++) {
+    var td = document.createElement("td");
+    td.textContent = cells[i];
+    tr.appendChild(td);
+  }
+  if (r.broke || r.bankBroke) { tr.style.background = "#fdecea"; }
+  t.appendChild(tr);
+}
+
+// ---- Scenarios (same numbers as the verified prototype) ----
+var SCENARIOS = {
+  "Normal day":        { heat: 20, delay: 1, late: 0, delivery: 1.0, tax: false, newGoods: false, keepBuying: false, newJobRate: 0.6 },
+  "Amodei ledger":     { heat: 60, delay: 1, late: 1, delivery: 1.0, tax: false, newGoods: false, keepBuying: true,  newJobRate: 0.6 },
+  "Amodei ledger, prudent": { heat: 60, delay: 1, late: 1, delivery: 1.0, tax: false, newGoods: false, keepBuying: false, newJobRate: 0.6 },
+  "Bubble bursts":     { heat: 80, delay: 1, late: 1, delivery: 0.6, tax: false, newGoods: false, keepBuying: true,  newJobRate: 0.6 },
+  "Unemployment wave": { heat: 60, delay: 0, late: 0, delivery: 1.0, tax: false, newGoods: false, keepBuying: false, newJobRate: 0 },
+  "Third outcome":     { heat: 60, delay: 1, late: 1, delivery: 1.0, tax: true,  newGoods: true,  keepBuying: false, newJobRate: 0.6, coolFrom: { year: 2029, heat: 20 } },
+  "Third outcome, no tax": { heat: 60, delay: 1, late: 1, delivery: 1.0, tax: false, newGoods: true, keepBuying: false, newJobRate: 0.6, coolFrom: { year: 2029, heat: 20 } }
+};
+var SCEN_TC = {
+  "Normal day": "平常的日子", "Amodei ledger": "達里奧的帳本",
+  "Amodei ledger, prudent": "達里奧收手版", "Bubble bursts": "泡沫破掉",
+  "Unemployment wave": "失業潮", "Third outcome": "第三個結局",
+  "Third outcome, no tax": "第三個結局，不要稅"
+};
+function resetTo(p) {
+  S = freshState(p);
+  syncControls();
+  var t = $("scoreTable");
+  while (t.rows.length > 1) { t.deleteRow(1); }
+  update();
+}
+function runTo(endYear) {
+  while (!S.over && S.year <= endYear) {
+    var r = stepYear();
+    if (r) { logRow(r); }
+  }
+  update();
+}
+function runScenario(name) {
+  resetTo(SCENARIOS[name]);
+  runTo(2030);
+}
+
+// ---- Drawing: Z chart ----
+function drawChart() {
+  var cv = $("zCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height, L = 48, B = 34, T = 14, R = 14;
+  var YMIN = 0, YMAX = 1.2;
+  function X(y) { return L + ((y - 2026) / 4) * (W - L - R); }
+  function Y(z) { return H - B - ((z - YMIN) / (YMAX - YMIN)) * (H - T - B); }
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#ccc"; ctx.fillStyle = "#333"; ctx.font = "13px Georgia";
+  for (var g = 0; g <= 1.2; g += 0.2) {
+    ctx.beginPath(); ctx.moveTo(L, Y(g)); ctx.lineTo(W - R, Y(g)); ctx.stroke();
+    ctx.fillText(g.toFixed(1), 8, Y(g) + 4);
+  }
+  for (var yy = 2026; yy <= 2030; yy++) {
+    ctx.fillText(yy + "", X(yy) - 14, H - B + 18);
+  }
+  ctx.fillText("年份 →", W - 70, H - 8);
+  ctx.fillText("Z", 4, 12);
+  // healthy line Z=1.0
+  ctx.strokeStyle = "#888"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(L, Y(1.0)); ctx.lineTo(W - R, Y(1.0)); ctx.stroke();
+  ctx.fillStyle = "#888"; ctx.font = "bold 13px Georgia";
+  ctx.fillText("健康 Z = 1.0", L + 6, Y(1.0) - 6);
+  // danger line Z=0.5
+  ctx.strokeStyle = "#b3261e";
+  ctx.beginPath(); ctx.moveTo(L, Y(0.5)); ctx.lineTo(W - R, Y(0.5)); ctx.stroke();
+  ctx.fillStyle = "#b3261e";
+  ctx.fillText("危險 Z = 0.5", L + 6, Y(0.5) - 6);
+  ctx.setLineDash([]); ctx.lineWidth = 1; ctx.font = "13px Georgia";
+  // Z path
+  var h = S.history;
+  if (h.length > 0) {
+    ctx.strokeStyle = "#0b5fa5"; ctx.lineWidth = 2.5; ctx.beginPath();
+    ctx.moveTo(X(h[0].y), Y(Math.min(YMAX, h[0].Z)));
+    for (var i = 1; i < h.length; i++) {
+      ctx.lineTo(X(h[i].y), Y(Math.min(YMAX, h[i].Z)));
+    }
+    ctx.stroke(); ctx.lineWidth = 1;
+    for (var j = 0; j < h.length; j++) {
+      var px = X(h[j].y), py = Y(Math.min(YMAX, h[j].Z));
+      ctx.fillStyle = (h[j].broke || h[j].bankBroke) ? "#b3261e" : "#0b5fa5";
+      ctx.beginPath(); ctx.arc(px, py, 5, 0, 2 * Math.PI); ctx.fill();
+      if (h[j].broke || h[j].bankBroke) {
+        ctx.strokeStyle = "#b3261e"; ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(px - 8, py - 8); ctx.lineTo(px + 8, py + 8);
+        ctx.moveTo(px + 8, py - 8); ctx.lineTo(px - 8, py + 8);
+        ctx.stroke(); ctx.lineWidth = 1;
+      }
+    }
+  }
+}
+
+// ---- Drawing: gas bottle ----
+function drawGas(last) {
+  var cv = $("gasCanvas"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  // chamber
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+  ctx.strokeRect(20, 30, W - 140, 130);
+  var V = last ? last.V : 100;
+  var Q = last ? last.Q : 100;
+  // piston position from V (0..700 -> x 60..W-190)
+  var px = 60 + (Math.min(700, V) / 700) * (W - 250);
+  ctx.fillStyle = "#0b5fa5";
+  ctx.fillRect(px, 30, 10, 130);
+  // Q dots: one dot per 15 units of orders, capped at 40
+  var n = Math.min(40, Math.round(Q / 15));
+  ctx.fillStyle = "#d97b00";
+  for (var i = 0; i < n; i++) {
+    var dx = 30 + ((i * 53) % Math.max(10, (px - 40)));
+    var dy = 45 + ((i * 37) % 100);
+    ctx.beginPath(); ctx.arc(dx, dy, 4, 0, 2 * Math.PI); ctx.fill();
+  }
+  // thermometer for T (1.0..2.0 -> height)
+  var T = last ? last.T : 1.6;
+  var th = 20 + ((T - 1.0) / 1.0) * 110;
+  if (th < 0) { th = 0; }
+  if (th > 130) { th = 130; }
+  ctx.fillStyle = "#c00";
+  ctx.fillRect(W - 52, 160 - th, 16, th);
+  ctx.strokeStyle = "#333"; ctx.lineWidth = 1;
+  ctx.strokeRect(W - 52, 30, 16, 130);
+  ctx.fillStyle = "#333"; ctx.font = "13px Georgia";
+  ctx.fillText("活塞 = V 真東西", 24, 185);
+  ctx.fillText("橘點 = Q 算力合約", 24, 205);
+  ctx.fillText("溫度計 = T 期待", W - 190, 185);
+  // cash bar (0..500) and household bar (0..130)
+  var cash = last ? Math.max(0, last.cash) : 150;
+  var Hh = last ? last.H : 100;
+  ctx.fillStyle = "#ddd";
+  ctx.fillRect(24, 225, 300, 16);
+  ctx.fillRect(24, 250, 300, 16);
+  ctx.fillStyle = cash < 50 ? "#b3261e" : "#0b7a3e";
+  ctx.fillRect(24, 225, Math.min(300, cash / 500 * 300), 16);
+  ctx.fillStyle = "#0b5fa5";
+  ctx.fillRect(24, 250, Math.min(300, Hh / 130 * 300), 16);
+  ctx.fillStyle = "#333";
+  ctx.fillText("公司現金 " + (last ? last.cash.toFixed(0) : "150"), 330, 238);
+  ctx.fillText("家庭收入 " + (last ? last.H.toFixed(0) : "100"), 330, 263);
+  if (S.over) {
+    ctx.fillStyle = "#b3261e"; ctx.font = "bold 24px Georgia";
+    ctx.fillText(S.over.type === "company" ? "瓶子破了！公司破產" : "銀行撐不住了！",
+      24, 292);
+  }
+}
+
+// ---- Wiring ----
+["heatSlider", "delaySlider", "delSlider"].forEach(function (id) {
+  $(id).addEventListener("input", function () { readControls(); update(); });
+});
+["lateBox", "taxBox", "goodsBox", "buyBox"].forEach(function (id) {
+  $(id).addEventListener("change", function () { readControls(); update(); });
+});
+$("btnNormal").addEventListener("click", function () { runScenario("Normal day"); });
+$("btnLedger").addEventListener("click", function () { runScenario("Amodei ledger"); });
+$("btnPrudent").addEventListener("click", function () { runScenario("Amodei ledger, prudent"); });
+$("btnBubble").addEventListener("click", function () { runScenario("Bubble bursts"); });
+$("btnWave").addEventListener("click", function () { runScenario("Unemployment wave"); });
+$("btnThird").addEventListener("click", function () { runScenario("Third outcome"); });
+$("btnThirdNoTax").addEventListener("click", function () { runScenario("Third outcome, no tax"); });
+$("btnStep").addEventListener("click", function () {
+  var r = stepYear();
+  if (r) { logRow(r); }
+  update();
+});
+$("btnRun").addEventListener("click", function () { runTo(2030); });
+$("btnCool").addEventListener("click", function () {
+  S.heat = Math.max(0, S.heat - 40);
+  syncControls();
+  update();
+});
+$("btnTax").addEventListener("click", function () {
+  S.tax = !S.tax;
+  syncControls();
+  update();
+});
+$("btnReset").addEventListener("click", function () { resetTo(SCENARIOS["Normal day"]); });
+$("btnClear").addEventListener("click", function () {
+  var t = $("scoreTable");
+  while (t.rows.length > 1) { t.deleteRow(1); }
+});
+
+// ---- Expose model for testing (same pattern as the Phillips lab) ----
+window.__aiBottle = { freshState: freshState, stepYear: stepYear, runTo: runTo,
+  runScenario: runScenario, scenarios: SCENARIOS, scenarioNamesTC: SCEN_TC,
+  FIXED: FIXED, getState: function () { return S; } };
+
+// ---- Start ----
+resetTo(SCENARIOS["Normal day"]);
+</script>
+</body>
+</html>
